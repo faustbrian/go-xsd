@@ -23,12 +23,12 @@ awk '
 ' "$raw" >"$output"
 awk '
   BEGIN {
-    expected["github.com/faustbrian/golib/pkg/xsd"] = 1
-    expected["github.com/faustbrian/golib/pkg/xsd/builder"] = 1
-    expected["github.com/faustbrian/golib/pkg/xsd/compile"] = 1
-    expected["github.com/faustbrian/golib/pkg/xsd/datatype"] = 1
-    expected["github.com/faustbrian/golib/pkg/xsd/resolve"] = 1
-    expected["github.com/faustbrian/golib/pkg/xsd/validate"] = 1
+    expected["github.com/faustbrian/go-xsd"] = 1
+    expected["github.com/faustbrian/go-xsd/builder"] = 1
+    expected["github.com/faustbrian/go-xsd/compile"] = 1
+    expected["github.com/faustbrian/go-xsd/datatype"] = 1
+    expected["github.com/faustbrian/go-xsd/resolve"] = 1
+    expected["github.com/faustbrian/go-xsd/validate"] = 1
   }
   FNR == 1 { next }
   {

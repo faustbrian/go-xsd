@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
+	"github.com/faustbrian/go-xsd/datatype"
 )
 
 func TestValidateBuiltInLexicalSpaces(t *testing.T) {

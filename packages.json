@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-xsd",
+  "packages": [
+    {
+      "module_directory": ".",
+      "directory": ".",
+      "name": "xsd",
+      "import_path": "github.com/faustbrian/go-xsd",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "builder",
+      "name": "builder",
+      "import_path": "github.com/faustbrian/go-xsd/builder",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "compile",
+      "name": "compile",
+      "import_path": "github.com/faustbrian/go-xsd/compile",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "datatype",
+      "name": "datatype",
+      "import_path": "github.com/faustbrian/go-xsd/datatype",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "resolve",
+      "name": "resolve",
+      "import_path": "github.com/faustbrian/go-xsd/resolve",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "validate",
+      "name": "validate",
+      "import_path": "github.com/faustbrian/go-xsd/validate",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "xsdtest",
+      "name": "xsdtest",
+      "import_path": "github.com/faustbrian/go-xsd/xsdtest",
+      "kind": "test support",
+      "production": false,
+      "executable": true,
+      "coverage_required": false,
+      "build_required": true,
+      "build_tags": []
+    }
+  ]
+}

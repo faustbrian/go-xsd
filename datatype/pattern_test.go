@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
+	"github.com/faustbrian/go-xsd/datatype"
 )
 
 func TestCompilePatternUsesXMLSchemaSemantics(t *testing.T) {

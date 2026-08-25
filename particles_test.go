@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
+	xsd "github.com/faustbrian/go-xsd"
 )
 
 func TestParseCapturesNestedParticlesAndAttributeUses(t *testing.T) {

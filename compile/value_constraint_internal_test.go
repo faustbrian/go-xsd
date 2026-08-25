@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
+	xsd "github.com/faustbrian/go-xsd"
 )
 
 func TestConstraintFacetValueDecisionTables(t *testing.T) {

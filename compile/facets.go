@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
+	xsd "github.com/faustbrian/go-xsd"
+	"github.com/faustbrian/go-xsd/datatype"
 )
 
 func (s *compileState) normalizeConstraintLexical(

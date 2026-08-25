@@ -1,4 +1,4 @@
-module github.com/faustbrian/golib/pkg/xsd
+module github.com/faustbrian/go-xsd
 
 go 1.26.6
 

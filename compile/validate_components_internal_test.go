@@ -3,7 +3,7 @@ package compile
 import (
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
+	xsd "github.com/faustbrian/go-xsd"
 )
 
 func TestValidateComponentsPropagatesEveryComponentFailure(t *testing.T) {

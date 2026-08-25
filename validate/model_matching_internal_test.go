@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
+	xsd "github.com/faustbrian/go-xsd"
 )
 
 func TestModelMatchingPropagatesNestedValidationFailures(t *testing.T) {

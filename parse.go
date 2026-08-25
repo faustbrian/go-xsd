@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
+	"github.com/faustbrian/go-xsd/datatype"
 )
 
 const (

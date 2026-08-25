@@ -5,12 +5,15 @@ at its first stable release.
 
 ## Unreleased
 
+## 1.0.0 - 2026-08-25
+
 ### Documentation
 
 - Link the package README to the repository-wide Golib documentation portal.
 
 ### Changed
 
+- Publish the module from its standalone `github.com/faustbrian/go-xsd` identity while preserving its documented API and behavior.
 - Validate native and JAXP benchmark output with the standard shell toolchain
   so clean Linux CI runners do not require an undeclared ripgrep installation.
 - Link conformance and migration guidance directly to the canonical

@@ -3,7 +3,7 @@ package xsd_test
 import (
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
+	xsd "github.com/faustbrian/go-xsd"
 )
 
 func TestNormalizeIdentityXPathWhitespace(t *testing.T) {

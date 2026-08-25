@@ -24,5 +24,5 @@ fi
 
 cd "${root}"
 GOWORK=off run_apidiff -m -w "${current}" \
-	"github.com/faustbrian/golib/pkg/xsd"
+	"github.com/faustbrian/go-xsd"
 GOWORK=off run_apidiff -m -incompatible "${baseline}" "${current}"

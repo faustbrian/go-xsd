@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
-	"github.com/faustbrian/golib/pkg/xsd/resolve"
+	xsd "github.com/faustbrian/go-xsd"
+	"github.com/faustbrian/go-xsd/datatype"
+	"github.com/faustbrian/go-xsd/resolve"
 )
 
 var (

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
-	"github.com/faustbrian/golib/pkg/xsd/datatype"
+	xsd "github.com/faustbrian/go-xsd"
+	"github.com/faustbrian/go-xsd/datatype"
 )
 
 func TestConstraintComparisonExhaustiveBoundaries(t *testing.T) {

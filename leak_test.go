@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/faustbrian/golib/pkg/xsd/compile"
-	"github.com/faustbrian/golib/pkg/xsd/validate"
+	"github.com/faustbrian/go-xsd/compile"
+	"github.com/faustbrian/go-xsd/validate"
 	"go.uber.org/goleak"
 )
 

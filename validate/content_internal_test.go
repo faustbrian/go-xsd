@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	xsd "github.com/faustbrian/golib/pkg/xsd"
-	"github.com/faustbrian/golib/pkg/xsd/compile"
+	xsd "github.com/faustbrian/go-xsd"
+	"github.com/faustbrian/go-xsd/compile"
 )
 
 func TestValidateElementPropagatesEveryContentFailure(t *testing.T) {
