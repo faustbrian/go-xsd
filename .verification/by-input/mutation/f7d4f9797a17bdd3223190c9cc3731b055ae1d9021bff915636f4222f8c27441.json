@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-xsd",
+  "module": ".",
+  "package": "compile",
+  "gate": "mutation",
+  "input_digest": "sha256:f7d4f9797a17bdd3223190c9cc3731b055ae1d9021bff915636f4222f8c27441",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:95b9972ccdc3612a5721de7c0be323e58f52b45bc2462cd2b66993823a821f88",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "arm64",
+    "GOOS": "darwin",
+    "GOVERSION": "go1.27.0",
+    "gremlins_binary_sha256": "sha256:6a2beddc477eb410f8a670b6c9049558563d3c4327498fe31604d31c773a959e"
+  },
+  "completed_at": "2026-08-29T11:06:18.372922Z"
+}

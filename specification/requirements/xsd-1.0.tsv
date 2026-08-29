@@ -30,8 +30,8 @@ SER-001	Serialize schemas deterministically	Project acceptance criteria	implemen
 SER-002	Reject cyclic models and bound serialization depth work and output	Project security policy	implemented	serialize_limits.go serialize_test.go
 BLD-001	Provide valid-by-construction builders	Project acceptance criteria	implemented	builder/builder_test.go builder/clone_internal_test.go
 CONF-001	Run the pinned XSTS suite with no blocking failures	XSTS 2007-06-20	implemented	xsdtest/xsts_test.go scripts/check-xsts.sh docs/xsts-baseline.md
-QUAL-001	Maintain meaningful 100 percent production coverage	Project acceptance criteria	implemented	scripts/check-coverage.sh
-QUAL-002	Pass fuzz race mutation cancellation and leak gates	Project acceptance criteria	implemented	fuzz_test.go datatype/fuzz_test.go leak_test.go scripts/check-mutation.sh docs/mutation-baseline.md
+QUAL-001	Maintain meaningful 100 percent production coverage	Project acceptance criteria	implemented	.golib.yaml packages.json
+QUAL-002	Pass fuzz race mutation cancellation and leak gates	Project acceptance criteria	implemented	fuzz_test.go datatype/fuzz_test.go leak_test.go .golib.yaml verification/package.mk docs/mutation-baseline.md
 DOCS-001	Publish the required user and maintainer documentation	Project acceptance criteria	implemented	README.md docs/README.md docs/security.md docs/cookbook.md
 WSDL-001	Expose compiled sets suitable for wsdl	Project acceptance criteria	implemented	compile/compile.go compile/wsdl_contract_test.go docs/wsdl-integration.md
 QUAL-003	Pass correctness-gated comparative benchmarks	Project acceptance criteria	implemented	benchmark_test.go scripts/check-benchmarks.sh xsdtest/reference/ReferenceBenchmark.java

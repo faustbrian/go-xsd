@@ -5,6 +5,12 @@ at its first stable release.
 
 ## Unreleased
 
+### Changed
+
+- Adopt `go-library-tools` v1.0.7 for shared repository verification while
+  retaining package-owned conformance, interoperability, fuzz, benchmark, and
+  mutation evidence.
+
 ## 1.0.0 - 2026-08-25
 
 ### Changed

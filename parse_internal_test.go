@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseInlineSimpleTypesBranches(t *testing.T) {
@@ -265,8 +266,6 @@ func TestSimpleContentRestrictionGrammarDoesNotLeakIntoOtherDerivations(t *testi
 }
 
 func TestParseDocumentPropagatesComponentErrors(t *testing.T) {
-	t.Parallel()
-
 	for _, test := range []struct {
 		name  string
 		body  string
@@ -294,10 +293,19 @@ func TestParseDocumentPropagatesComponentErrors(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			schema := `<schema xmlns="` + Namespace + `">` + test.body + `</schema>`
 			decoder, start := decoderAtStart(t, schema)
-			_, err := parseDocument(decoder, start, "test.xsd")
+			done := make(chan error, 1)
+			go func() {
+				_, err := parseDocument(decoder, start, "test.xsd")
+				done <- err
+			}()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("parseDocument() did not terminate")
+			}
 			if err == nil {
 				t.Fatal("Parse() succeeded")
 			}
@@ -354,8 +362,6 @@ func TestParseRejectsUnknownAttributesAtGrammarBoundaries(t *testing.T) {
 }
 
 func TestParseContentDerivationBranches(t *testing.T) {
-	t.Parallel()
-
 	decoder, start := decoderAtStart(t, `<complexContent xmlns="`+Namespace+`" mixed="true">`+
 		`<annotation><documentation>content</documentation></annotation>`+
 		`<extension xmlns:t="urn:types" base="t:Base">`+
@@ -401,9 +407,17 @@ func TestParseContentDerivationBranches(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			err := parseContentDerivation(decoder, start, &ComplexType{}, nil)
+			done := make(chan error, 1)
+			go func() {
+				done <- parseContentDerivation(decoder, start, &ComplexType{}, nil)
+			}()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("parseContentDerivation() did not terminate")
+			}
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseContentDerivation() error = %v, want %v", err, test.want)
 			}
@@ -427,8 +441,6 @@ func TestParseRedefinitionPropagatesAnnotationErrors(t *testing.T) {
 }
 
 func TestParseComplexTypeBranches(t *testing.T) {
-	t.Parallel()
-
 	decoder, start := decoderAtStart(t, `<complexType xmlns="`+Namespace+`" xmlns:f="urn:foreign"`+
 		` name="Record" abstract="true" mixed="false" block="extension" final="restriction" f:ignored="yes">`+
 		`<group ref="Items"><annotation/></group>`+
@@ -478,9 +490,18 @@ func TestParseComplexTypeBranches(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseComplexType(decoder, start, nil)
+			done := make(chan error, 1)
+			go func() {
+				_, err := parseComplexType(decoder, start, nil)
+				done <- err
+			}()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("parseComplexType() did not terminate")
+			}
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseComplexType() error = %v, want %v", err, test.want)
 			}
@@ -489,8 +510,6 @@ func TestParseComplexTypeBranches(t *testing.T) {
 }
 
 func TestParseDerivationBodyRejectsInvalidChildren(t *testing.T) {
-	t.Parallel()
-
 	for _, test := range []struct {
 		name string
 		xml  string
@@ -513,9 +532,17 @@ func TestParseDerivationBodyRejectsInvalidChildren(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			err := parseDerivationBody(decoder, start, &ComplexType{}, nil)
+			done := make(chan error, 1)
+			go func() {
+				done <- parseDerivationBody(decoder, start, &ComplexType{}, nil)
+			}()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("parseDerivationBody() did not terminate")
+			}
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseDerivationBody() error = %v, want %v", err, test.want)
 			}
@@ -523,7 +550,6 @@ func TestParseDerivationBodyRejectsInvalidChildren(t *testing.T) {
 	}
 
 	t.Run("multiple simple-content inline types", func(t *testing.T) {
-		t.Parallel()
 		decoder, start := decoderAtStart(t, `<restriction xmlns="`+Namespace+`">`+
 			`<simpleType><restriction base="string"/></simpleType>`+
 			`<simpleType><restriction base="string"/></simpleType>`+
@@ -642,8 +668,6 @@ func TestParseRestrictionFacetBranches(t *testing.T) {
 }
 
 func TestParseModelGroupBranches(t *testing.T) {
-	t.Parallel()
-
 	decoder, start := decoderAtStart(t, `<sequence xmlns="`+Namespace+`" xmlns:t="urn:test">`+
 		`<annotation id="group"/>`+
 		`<element name="value" minOccurs="0"><annotation/></element>`+
@@ -692,9 +716,18 @@ func TestParseModelGroupBranches(t *testing.T) {
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseModelGroup(decoder, start, Sequence, nil)
+			done := make(chan error, 1)
+			go func() {
+				_, err := parseModelGroup(decoder, start, Sequence, nil)
+				done <- err
+			}()
+			var err error
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("parseModelGroup() did not terminate")
+			}
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseModelGroup() error = %v, want %v", err, test.want)
 			}
