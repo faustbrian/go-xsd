@@ -11,6 +11,11 @@ at its first stable release.
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
   mutation evidence.
 
+### Documentation
+
+- Remove the archived monorepo documentation link; package guidance remains in
+  the repository-owned documentation.
+
 ## 1.0.0 - 2026-08-25
 
 ### Changed
