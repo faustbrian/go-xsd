@@ -29,6 +29,13 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Exact W3C publications, errata snapshot, schema resources, and XSTS archive are pinned in the [manifest](../specification/manifest.tsv). |
 | Reconsider when | XML Schema 1.1 is selected as a separately complete, tested, and documented feature line. |
 
+Machine binding: classification `optional behavior`; scope `application-policy`;
+specification `W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-1.0-source`; section `1`; requirement strength
+`not specified`.
+Documentation: `docs/specification-decisions.md`.
+Machine upstream status: Exact W3C publications, errata snapshot, schema resources, and XSTS archive are pinned in the manifest.
+
 ## XSD-DEC-002: Parsing performs no external resolution
 
 | Field | Decision |
@@ -46,6 +53,11 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Public surface | `Parse`, `compile.New`, `compile.Options.Resolver`, and the `resolve` package |
 | Upstream record | Resolution requirements are mapped as `DOC-003`, `DOC-004`, and `RES-001` in `specification/requirements/xsd-1.0.tsv`. |
 | Reconsider when | A new explicit resolver adapter is added; parsing itself remains I/O-free unless the public ownership contract is deliberately redesigned. |
+
+Machine binding: classification `omission`; scope `defensive`; specification
+`W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-1.0-source`; section `4.2`; requirement strength `not specified`.
+Documentation: `docs/specification-decisions.md`.
 
 ## XSD-DEC-003: Conformance claims require matrix evidence
 
@@ -65,23 +77,41 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Requirement status and evidence remain in `specification/requirements/xsd-1.0.tsv`; the measured corpus result is retained in [`xsts-baseline.md`](xsts-baseline.md). |
 | Reconsider when | A requirement row, corpus pin, or accepted-expectation policy changes. |
 
-## XSD-DEC-004: XML Schema 1.0 support matrix is complete
+Machine binding: classification `interoperability policy`; scope
+`application-policy`; specification `W3C XML Schema Test Suite`; version
+`2007-06-20`; authority `xsts-source`; section `XSTS metadata`; requirement
+strength `informative`. Differential evidence is
+`testdata/differential/cases.tsv` and
+`xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
+Documentation: `docs/specification-decisions.md`.
+Machine upstream status: Requirement status and evidence remain in `specification/requirements/xsd-1.0.tsv`; the measured corpus result is retained in `xsts-baseline.md`.
+
+## XSD-DEC-004: XSTS baseline bounds the conformance claim
 
 | Field | Decision |
 | --- | --- |
 | Status and owner | `resolved`; `xsd` maintainers |
 | Source | W3C [XML Schema Test Suite 2007-06-20](https://www.w3.org/XML/2004/xml-schema-test-suite/xmlschema2006-11-06/xsts-2007-06-20.tar.gz) and XML Schema 1.0 recommendations |
 | Classification | Current support-baseline and release-gate decision |
-| Issue | Completing a support matrix is a point-in-time evidence claim. Treating it as permanently complete would allow later regressions, fixture changes, or discovered semantic gaps to remain hidden behind historical status. |
-| Credible interpretations | Freeze the completed labels; weaken broad claims when a test fails; exclude newly failing fixtures; treat the unit suite as sufficient; or reopen every affected row whenever its evidence no longer proves the requirement. |
+| Issue | A complete pass over accepted XSTS expectations is a point-in-time corpus result, not proof of every XML Schema behavior or future correctness. |
+| Credible interpretations | Claim universal conformance from the corpus; report only a percentage; freeze completed labels; or bind the exact corpus result to only the documented matrix rows it exercises. |
 | Known peer behavior | Validators publish support matrices with different update and regression policies. A historical peer claim does not prove current behavior. |
-| Selected behavior | Every current XML Schema 1.0 support and release-quality row is implemented, all 24,696 accepted XSTS expectations pass without skips, and 90 upstream `queried` expectations remain separately reported. Any semantic gap or regression reopens its affected row and blocks the broad claim until fixed. |
+| Selected behavior | The recorded baseline reports 24,696 accepted XSTS expectations passing without skips and 90 upstream `queried` expectations separately. It supports only the documented matrix rows it exercises. Any semantic gap or regression reopens its affected row; XSTS success is never described as universal XSD conformance. |
 | Security and resource consequences | Fail-closed reopening prevents security and resource regressions from being relabeled as unsupported edge cases. Official execution remains root-confined and bounded. |
 | Compatibility and wire consequences | Accepted schema and instance wire behavior cannot be narrowed silently to preserve a green status. A changed support row requires explicit compatibility and changelog review. |
 | Executable evidence | `TestOfficialXSTS`, `TestRunExcludesQueriedExpectations`, and `TestRunReportsMetadataAndRequiredCaseFailures` |
-| Public surface | Complete XML Schema 1.0 support and release-readiness claims |
+| Public surface | Published XML Schema 1.0 matrix and XSTS baseline claims |
 | Upstream record | Current row status is retained in `specification/requirements/xsd-1.0.tsv`; exact corpus counts are retained in [`xsts-baseline.md`](xsts-baseline.md). |
 | Reconsider when | Any requirement evidence, accepted fixture, implementation behavior, or corpus pin changes. |
+
+Machine binding: classification `interoperability policy`; scope
+`application-policy`; specification `W3C XML Schema Test Suite`; version
+`2007-06-20`; authority `xsts-source`; section `XSTS metadata`; requirement
+strength `informative`. Differential evidence is
+`testdata/differential/cases.tsv` and
+`xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
+Documentation: `docs/specification-decisions.md`.
+Machine upstream status: Current row status is retained in `specification/requirements/xsd-1.0.tsv`; exact corpus counts are retained in `xsts-baseline.md`.
 
 ## XSD-DEC-005: Normative-source precedence and errata
 
@@ -101,6 +131,15 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Source role, version, status, digest, size, and URL are recorded independently in the [manifest](../specification/manifest.tsv). |
 | Reconsider when | W3C publishes a superseding correction or a minimized fixture proves the selected reading conflicts with normative prose. |
 
+Machine binding: classification `contradiction`; scope `normative`;
+specification `W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-1.0-source`; section `source precedence`;
+requirement strength `not specified`. Differential evidence is
+`testdata/differential/cases.tsv` and
+`xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
+Documentation: `docs/specification-decisions.md`.
+Machine upstream status: Source role, version, status, digest, size, and URL are recorded independently in the manifest.
+
 ## XSD-DEC-006: DTD and entity processing is forbidden
 
 | Field | Decision |
@@ -118,6 +157,11 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Public surface | `Parse`, `validate.Validator`, byte, reader, and tree validation entry points |
 | Upstream record | The secure profile is mapped as `SEC-001` and `SEC-002` in the requirement matrix. |
 | Reconsider when | No implicit DTD mode is planned; any future opt-in would require a separate threat model and feature-line contract. |
+
+Machine binding: classification `optional behavior`; scope `defensive`;
+specification `W3C XML 1.0 Fifth Edition`; version `Fifth Edition, 2008-11-26`;
+authority `xml-1.0-source`; section `2.8`; requirement strength `not specified`.
+Documentation: `docs/specification-decisions.md`.
 
 ## XSD-DEC-007: Expanded names own identity
 
@@ -137,6 +181,14 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Namespace, composition, and chameleon obligations are mapped under `DOC-004`, `COMP-002`, and `COMP-003`. |
 | Reconsider when | A lexical-preservation mode is introduced; semantic identity remains expanded-name based. |
 
+Machine binding: classification `ambiguity`; scope `normative`; specification
+`W3C Namespaces in XML 1.0 Third Edition`; version `Third Edition, 2009-12-08`;
+authority `xml-names-1.0-source`; section `2`; requirement
+strength `not specified`. Differential evidence is
+`testdata/differential/cases.tsv` and
+`xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
+Documentation: `docs/specification-decisions.md`.
+
 ## XSD-DEC-008: XML Schema regular expressions are a distinct dialect
 
 | Field | Decision |
@@ -154,6 +206,12 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Public surface | Pattern facets, datatype compilation, schema compilation, and instance validation |
 | Upstream record | Pattern support is mapped under `TYPE-002` in the requirement matrix. |
 | Reconsider when | XML Schema 1.1 is implemented or the execution backend changes; the public dialect remains versioned XSD syntax. |
+
+Machine binding: classification `ambiguity`; scope `normative`; specification
+`W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-datatypes-source`; section `Datatypes Appendix F`; requirement
+strength `not specified`.
+Documentation: `docs/specification-decisions.md`.
 
 ## XSD-DEC-009: Identity constraints use only the XSD XPath subset
 
@@ -173,6 +231,12 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Identity requirements are mapped as `IDENT-001` and `IDENT-002`. |
 | Reconsider when | A future XML Schema feature line defines a different selector language. |
 
+Machine binding: classification `optional behavior`; scope `normative`;
+specification `W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-1.0-source`; section `3.11.6`; requirement strength
+`not specified`.
+Documentation: `docs/specification-decisions.md`.
+
 ## XSD-DEC-010: Datatype comparisons use value spaces
 
 | Field | Decision |
@@ -190,6 +254,12 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Public surface | Datatype parsing, facets, fixed/default constraints, identity constraints, and validation diagnostics |
 | Upstream record | Datatype obligations are mapped under `TYPE-001` through `TYPE-003`. |
 | Reconsider when | A datatype defect, erratum, or future feature line changes value-space semantics. |
+
+Machine binding: classification `ambiguity`; scope `normative`; specification
+`W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-datatypes-source`; section `Datatypes 2.2`; requirement strength
+`not specified`.
+Documentation: `docs/specification-decisions.md`.
 
 ## XSD-DEC-011: Deterministic serialization preserves schema semantics
 
@@ -209,6 +279,12 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Serialization policy is mapped as `SER-001` and `SER-002`. |
 | Reconsider when | A separate lexical-preserving or standards-defined canonicalization mode is introduced. |
 
+Machine binding: classification `omission`; scope `application-policy`;
+specification `W3C XML Schema 1.0 Second Edition`; version `Second Edition, 2004-10-28`;
+authority `xsd-1.0-source`; section `Structures 3`; requirement
+strength `not specified`.
+Documentation: `docs/specification-decisions.md`.
+
 ## XSD-DEC-012: Finite limits and structured diagnostics are observable policy
 
 | Field | Decision |
@@ -227,6 +303,12 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Upstream record | Defensive requirements are mapped as `SEC-003`, `SEC-004`, `VAL-003`, and `SER-002`. |
 | Reconsider when | A stage gains new recursive, allocating, I/O, or diagnostic behavior. |
 
+Machine binding: classification `implementation-defined behavior`; scope
+`defensive`; specification `W3C XML Schema 1.0 Second Edition`; version
+`Second Edition, 2004-10-28`; authority `xsd-1.0-source`; section `Structures 5`;
+requirement strength `not specified`.
+Documentation: `docs/specification-decisions.md`.
+
 ## XSD-DEC-013: Byte, reader, and tree validation share one semantic engine
 
 | Field | Decision |
@@ -244,6 +326,14 @@ resource, wire, executable-evidence, and changelog review when changed.
 | Public surface | `Validate`, `ValidateReader`, `ValidateTree`, validation options, results, and diagnostics |
 | Upstream record | Validation-mode parity is mapped as `VAL-001`, `VAL-002`, and `QUAL-004`. |
 | Reconsider when | A new input representation or truly incremental output API is added. |
+
+Machine binding: classification `implementation-defined behavior`; scope
+`application-policy`; specification `W3C XML Schema 1.0 Second Edition`;
+version `Second Edition, 2004-10-28`; authority `xsd-1.0-source`; section
+`Structures 5`; requirement strength `not specified`. Differential evidence is
+`testdata/differential/cases.tsv` and
+`xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
+Documentation: `docs/specification-decisions.md`.
 
 ## Unresolved decisions
 

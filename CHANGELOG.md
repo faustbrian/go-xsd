@@ -11,6 +11,32 @@ at its first stable release.
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
   mutation evidence.
 
+- Pin CI policy to canonical `go-library-tools` revision
+  `0bbff11f25d74203018019fa5b26ae1443310fe7`, including offline and online
+  specification decision enforcement.
+
+### Added
+
+- Add machine-enforced [specification decisions](docs/specification-decisions.md),
+  conformance bindings, append-only decision history, and separately monitored
+  XSD, XSTS, XML, and Namespaces authorities. The JAXP lane remains a
+  validity-only maintained-peer comparison, and XSTS results are explicitly
+  bounded to the documented matrix rather than universal XSD conformance.
+
+  Decision records: XSD-DEC-001 sha256:19b15b0bd7434c126bbdb9db9f3734542e21c511143a9257665b97024b05a84c;
+  XSD-DEC-002 sha256:63c571267586feb8322b0f6906c4bcfdf75319ebbad4b41de319fb16a87dd19c;
+  XSD-DEC-003 sha256:04525d003609b510a47435b78b4e8b6ed78396736721d4a93dbcb89f0efd4af0;
+  XSD-DEC-004 sha256:8468098c06390f78827e924e7016f63ce99adf55a2445e54ae3d7cdac79d63b7;
+  XSD-DEC-005 sha256:f32588e1e92c5d00a0283f98bde8dab4101a8f53c9fc2236d7bb4e657afb2d3f;
+  XSD-DEC-006 sha256:00b0ad09f357d201fa52f7ae16a78025d12a413161edcb79dfc14713f02abb5d;
+  XSD-DEC-007 sha256:4f64b7f6669be863ee08acad02f0d81eceb4eda575822afbca8230f00af2db90;
+  XSD-DEC-008 sha256:a59307791251be1eccadac67afd10cbc2fc7327c55718272a8085970dec123a7;
+  XSD-DEC-009 sha256:724e67326f218ab1609b03b042295f33aff31ceb41134151164958b6d52ed073;
+  XSD-DEC-010 sha256:cd1a11dccde7706717bb424e7b673e466080e7985d5c13b7cf612f474995f499;
+  XSD-DEC-011 sha256:c9fd12a12a0355471cf92bd550074b97440361401a33a11889f8cea2b56951c6;
+  XSD-DEC-012 sha256:f4cdd5fd86022abcb75d0a29d424c1e68e0ba2a11fc463d5a7a023e953de13e6;
+  XSD-DEC-013 sha256:7da45bc35a12cf7041458bd8a81b7f75b16a759823da9b09630e8bb42e198463.
+
 ### Documentation
 
 - Remove the archived monorepo documentation link; package guidance remains in

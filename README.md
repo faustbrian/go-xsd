@@ -16,8 +16,9 @@ and SOAP tooling without performing implicit file or network access.
 
 > [!WARNING]
 > The module follows stable v1 compatibility. The
-> XML Schema 1.0 support matrix is complete and the pinned XSTS gate passes;
-> XML Schema 1.1 is intentionally outside the stable scope.
+> documented XML Schema 1.0 surface is evidence-mapped and the pinned XSTS
+> baseline passes; neither statement claims support for XML Schema 1.1 or for
+> behavior outside the published matrix.
 
 ```go
 compiler, err := compile.New(compile.Options{Resolver: resolver})

@@ -20,3 +20,5 @@ The validator covers the features identified in the requirement matrix,
 including supported simple types and facets, particles, wildcards,
 substitution groups, anonymous types, and the implemented identity XPath
 subset. Complete XSD assessment semantics remain a release blocker.
+The published support claim is therefore limited to the versioned requirement
+matrix and decision register; XSTS and peer results do not widen that boundary.

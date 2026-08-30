@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-30",
+  "review_interval_days": 90,
+  "authorities": [
+    {
+      "id": "xsd-1.0-source",
+      "kind": "specification",
+      "version": "Second Edition, 2004-10-28",
+      "url": "https://www.w3.org/TR/2004/REC-xmlschema-1-20041028/",
+      "sha256": "92bfd116316332b1153941436430afbdb2040e036d5fb2d21d4c8fba36a7765a",
+      "specifications": ["W3C XML Schema 1.0 Second Edition"]
+    },
+    {
+      "id": "xsd-1.0-errata",
+      "kind": "errata",
+      "version": "",
+      "url": "https://www.w3.org/2004/03/xmlschema-errata.html",
+      "sha256": "d07bc24a7e631afd518f8442071f563fdf853fcba33ab996323eaa6081222ceb",
+      "specifications": ["W3C XML Schema 1.0 Second Edition"]
+    },
+    {
+      "id": "xsd-datatypes-source",
+      "kind": "specification",
+      "version": "Second Edition, 2004-10-28",
+      "url": "https://www.w3.org/TR/2004/REC-xmlschema-2-20041028/",
+      "sha256": "980de872aa2c50013d5202176eb85eef3f183a7df635fdcb6b4aa34c1c12eb72",
+      "specifications": ["W3C XML Schema 1.0 Second Edition"]
+    },
+    {
+      "id": "xsts-source",
+      "kind": "specification",
+      "version": "2007-06-20",
+      "url": "https://www.w3.org/XML/2004/xml-schema-test-suite/xmlschema2006-11-06/xsts-2007-06-20.tar.gz",
+      "sha256": "902176b25e4111cf96b08663107521a4992e8ea67aad6b815592a6a5b4b9ea06",
+      "specifications": ["W3C XML Schema Test Suite"]
+    },
+    {
+      "id": "xsts-updates",
+      "kind": "releases",
+      "version": "",
+      "url": "https://www.w3.org/XML/2004/xml-schema-test-suite/",
+      "sha256": "f42294d997a5d66e598f82c196672d62921ec160314ba5a63261d4f5d775df7a",
+      "specifications": ["W3C XML Schema Test Suite"]
+    },
+    {
+      "id": "xml-1.0-source",
+      "kind": "specification",
+      "version": "Fifth Edition, 2008-11-26",
+      "url": "https://www.w3.org/TR/2008/REC-xml-20081126/",
+      "sha256": "f58a4b9e1e5b8bac13fb55c4e5c7c8c5e2c176aa45ee68e2f1ab2498511927ec",
+      "specifications": ["W3C XML 1.0 Fifth Edition"]
+    },
+    {
+      "id": "xml-1.0-errata",
+      "kind": "errata",
+      "version": "",
+      "url": "https://www.w3.org/XML/xml-V10-5e-errata",
+      "sha256": "385dfaa3b3500c1fc6b0a500abf1e180c8b8a0faf9298e6e1a9004a2da9a1311",
+      "specifications": ["W3C XML 1.0 Fifth Edition"]
+    },
+    {
+      "id": "xml-names-1.0-source",
+      "kind": "specification",
+      "version": "Third Edition, 2009-12-08",
+      "url": "https://www.w3.org/TR/2009/REC-xml-names-20091208/",
+      "sha256": "b4a649e5fdab9852d68eca21442481599164949bcdee5549f2ec7e38fb3cd3a8",
+      "specifications": ["W3C Namespaces in XML 1.0 Third Edition"]
+    },
+    {
+      "id": "xml-names-1.0-errata",
+      "kind": "errata",
+      "version": "",
+      "url": "https://www.w3.org/XML/2009/xml-names-errata",
+      "sha256": "c9e96fc7e9eb5f798effc9e29f703d59319b1df41be8babb4cf1c1bd4a554e12",
+      "specifications": ["W3C Namespaces in XML 1.0 Third Edition"]
+    }
+  ]
+}
