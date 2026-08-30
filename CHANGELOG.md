@@ -7,7 +7,7 @@ at its first stable release.
 
 ### Changed
 
-- Adopt `go-library-tools` v1.0.7 for shared repository verification while
+- Adopt `go-library-tools` v1.0.13 for shared repository verification while
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
   mutation evidence.
 
