@@ -7,13 +7,10 @@ at its first stable release.
 
 ### Changed
 
-- Adopt `go-library-tools` v1.0.13 for shared repository verification while
+- Adopt checksum-pinned `go-library-tools` v1.2.0 and its immutable workflow
+  so CI executes offline and online specification decision enforcement while
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
   mutation evidence.
-
-- Pin CI policy to canonical `go-library-tools` revision
-  `0bbff11f25d74203018019fa5b26ae1443310fe7`, including offline and online
-  specification decision enforcement.
 
 ### Added
 
