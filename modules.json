@@ -119,7 +119,9 @@
       ],
       "specifications": [
         "W3C XML Schema 1.0 Second Edition",
-        "W3C XML Schema Test Suite"
+        "W3C XML Schema Test Suite",
+        "W3C XML 1.0 Fifth Edition",
+        "W3C Namespaces in XML 1.0 Third Edition"
       ],
       "conformance_corpora": [
         "W3C XML Schema Test Suite"
