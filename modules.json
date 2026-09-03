@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "github.com/faustbrian/go-xsd",
   "go_version": "1.26.6",
   "modules": [
@@ -208,6 +208,99 @@
           "implementation_status": "implemented-requires-fresh-verification"
         }
       ],
+      "cohesion": {
+        "family": "protocols-and-descriptions",
+        "secondary_capabilities": [
+          "data-encoding",
+          "protocols-and-schemas",
+          "testing-and-conformance"
+        ],
+        "responsibility": "Parse, compile, validate, serialize, and build bounded XML Schema 1.0 documents without implicit external I/O.",
+        "non_goals": [
+          "Implement XML Schema 1.1 or claim conformance beyond the published XML Schema 1.0 requirement matrix.",
+          "Own WSDL, SOAP, general XML processing, or application transport policy.",
+          "Perform implicit file or network resolution or make caller-provided resolvers safe."
+        ],
+        "public_package_identifier": "xsd",
+        "primary_entry_packages": [
+          "github.com/faustbrian/go-xsd"
+        ],
+        "package_selection": {
+          "github.com/faustbrian/go-xsd": "Use to parse, model, and deterministically serialize bounded XML Schema 1.0 documents.",
+          "github.com/faustbrian/go-xsd/builder": "Use to construct checked XML Schema documents through a mutable builder and explicit Build validation boundary.",
+          "github.com/faustbrian/go-xsd/compile": "Use to resolve and compile bounded schema graphs into immutable concurrent validation sets.",
+          "github.com/faustbrian/go-xsd/datatype": "Use for XML Schema datatype lexical validation, canonicalization, ordering, and immutable numeric values.",
+          "github.com/faustbrian/go-xsd/resolve": "Use to supply explicit deny-by-default, in-memory, catalog, chained, or root-confined file resolution.",
+          "github.com/faustbrian/go-xsd/validate": "Use to validate bounded XML instances or caller-owned trees against an immutable compiled schema set.",
+          "github.com/faustbrian/go-xsd/xsdtest": "Use in tests to execute the pinned XML Schema Test Suite and inspect attributable conformance results."
+        },
+        "lifecycle_status": "active",
+        "maturity": "stable",
+        "construction_styles": [
+          "builder-build",
+          "new-options",
+          "plain-function",
+          "validated-value"
+        ],
+        "lifecycle_styles": [
+          "close",
+          "stateless"
+        ],
+        "ownership": {
+          "configuration": "caller",
+          "mutable_inputs": [
+            "borrow",
+            "copy"
+          ],
+          "runtime_resources": "caller",
+          "background_work": "none"
+        },
+        "optional_owned_dependencies": [],
+        "adapters": [],
+        "companions": [
+          "github.com/faustbrian/go-wsdl",
+          "github.com/faustbrian/go-xsd/builder",
+          "github.com/faustbrian/go-xsd/compile",
+          "github.com/faustbrian/go-xsd/datatype",
+          "github.com/faustbrian/go-xsd/resolve",
+          "github.com/faustbrian/go-xsd/validate",
+          "github.com/faustbrian/go-xsd/xsdtest"
+        ],
+        "supported_go": {
+          "minimum": "1.26.6",
+          "tested": [
+            "1.26.6"
+          ]
+        },
+        "supported_platforms": [
+          "portable-go"
+        ],
+        "supported_backends": [],
+        "supported_protocols": [
+          "xml-1-0",
+          "xml-namespaces-1-0",
+          "xml-schema-1-0"
+        ],
+        "documentation": {
+          "readme": "README.md",
+          "api": "docs/architecture.md",
+          "adoption": "docs/cookbook.md",
+          "security": "docs/security.md",
+          "compatibility": "docs/migration.md",
+          "performance": "docs/performance.md",
+          "examples": "docs/cookbook.md",
+          "faq": "docs/faq.md",
+          "changelog": "CHANGELOG.md",
+          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-xsd",
+          "ecosystem_index": "https://github.com/faustbrian/go-library-tools/blob/v1.3.0/docs/ecosystem/README.md"
+        },
+        "known_good_compatibility_sets": [],
+        "delivery": {
+          "implementation": "not-started",
+          "hardening": "not-started",
+          "release": "not-started"
+        }
+      },
       "gates": {
         "api_compatibility": true,
         "benchmarks": true,
