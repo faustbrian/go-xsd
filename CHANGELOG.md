@@ -7,6 +7,11 @@ at its first stable release.
 
 ### Changed
 
+- Adopt the `go-library-tools` v1.3.0 schema-v2 cohesion contract and local
+  `make cohesion` gate without changing XSD API or runtime behavior.
+- Pin reusable CI to the v1.3.0 workflow and enforce cohesion metadata in the
+  repository's required CI contract.
+
 - Adopt checksum-pinned `go-library-tools` v1.2.0 and its immutable workflow
   so CI executes offline and online specification decision enforcement while
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
@@ -35,6 +40,10 @@ at its first stable release.
   XSD-DEC-013 sha256:7da45bc35a12cf7041458bd8a81b7f75b16a759823da9b09630e8bb42e198463.
 
 ### Documentation
+
+- Publish the module's family, capabilities, ownership, lifecycle, supported
+  environments, package selection, and delivery status, and link the README to
+  the immutable v1.3.0 ecosystem index and family guidance.
 
 - Remove the archived monorepo documentation link; package guidance remains in
   the repository-owned documentation.
