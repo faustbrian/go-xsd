@@ -12,6 +12,12 @@ at its first stable release.
 - Pin reusable CI to the v1.3.0 workflow and enforce cohesion metadata in the
   repository's required CI contract.
 
+- Upgrade the checksum-pinned `go-library-tools` CLI and reusable CI workflow
+  to immutable v1.4.0 W14 enforcement, add online specification governance to
+  local `make ci`, and preserve the XSD API, runtime behavior, schema-v2
+  cohesion contract, and package-owned gates.
+- Enforce the same immutable v1.4.0 contract in required CI.
+
 - Adopt checksum-pinned `go-library-tools` v1.2.0 and its immutable workflow
   so CI executes offline and online specification decision enforcement while
   retaining package-owned conformance, interoperability, fuzz, benchmark, and
@@ -44,6 +50,8 @@ at its first stable release.
 - Publish the module's family, capabilities, ownership, lifecycle, supported
   environments, package selection, and delivery status, and link the README to
   the immutable v1.3.0 ecosystem index and family guidance.
+- Advance ecosystem and Protocols and descriptions family guidance to the
+  immutable v1.4.0 documentation release.
 
 - Remove the archived monorepo documentation link; package guidance remains in
   the repository-owned documentation.
