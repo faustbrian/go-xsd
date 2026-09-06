@@ -14,30 +14,25 @@
 and builder for Go. It is intended to provide the schema layer for `wsdl`
 and SOAP tooling without performing implicit file or network access.
 
-> [!WARNING]
-> The module follows stable v1 compatibility. The
+> [!NOTE]
+> The released module follows stable v1 compatibility. The
 > documented XML Schema 1.0 surface is evidence-mapped and the pinned XSTS
 > baseline passes; neither statement claims support for XML Schema 1.1 or for
 > behavior outside the published matrix.
 
-```go
-compiler, err := compile.New(compile.Options{Resolver: resolver})
-if err != nil {
-	return err
-}
-set, err := compiler.Compile(ctx, compile.Source{
-	URI:     "https://example.test/order.xsd",
-	Content: schema,
-})
-if err != nil {
-	return err
-}
-validator, err := validate.New(set, validate.Options{})
-if err != nil {
-	return err
-}
-result, err := validator.Validate(ctx, instance)
+## Install
+
+The stable v1 release requires Go 1.26.6.
+
+```sh
+go get github.com/faustbrian/go-xsd@v1
 ```
+
+## Quick start
+
+The [compiler-checked package example](example_test.go) parses, compiles, and
+validates a small schema without external I/O. See the [API guide](docs/api.md)
+for package selection and ownership boundaries.
 
 Parsing and validation reject DTDs. Compilation uses a deny-by-default
 resolver and bounded schema graphs. See [the documentation index](docs/README.md),
@@ -45,6 +40,10 @@ resolver and bounded schema graphs. See [the documentation index](docs/README.md
 [specification provenance](specification/README.md). Observable ambiguities
 and package policy are recorded in the
 [specification decision register](docs/specification-decisions.md).
+
+Use [GitHub issues](https://github.com/faustbrian/go-xsd/issues) for adoption
+questions and defect reports, and follow the [support](SUPPORT.md) and
+[security](SECURITY.md) policies.
 
 Run `make check` for formatting, static analysis, tests, the race detector,
 and provenance checks.

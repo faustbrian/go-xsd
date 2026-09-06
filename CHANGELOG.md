@@ -1,11 +1,14 @@
 # Changelog
 
-All notable released changes will be documented here. This project is not yet
-at its first stable release.
+All notable released changes are documented here. The module follows stable v1
+compatibility.
 
 ## Unreleased
 
 ### Changed
+
+- Align the immutable API evidence path with the released v1 line without
+  changing the recorded public API.
 
 - Adopt the `go-library-tools` v1.3.0 schema-v2 cohesion contract and local
   `make cohesion` gate without changing XSD API or runtime behavior.
@@ -46,6 +49,9 @@ at its first stable release.
   XSD-DEC-013 sha256:7da45bc35a12cf7041458bd8a81b7f75b16a759823da9b09630e8bb42e198463.
 
 ### Documentation
+
+- Add canonical v1 installation, Go support, package selection, a
+  compiler-checked example, and support and security navigation.
 
 - Publish the module's family, capabilities, ownership, lifecycle, supported
   environments, package selection, and delivery status, and link the README to
