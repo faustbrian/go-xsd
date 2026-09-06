@@ -50,6 +50,9 @@ compatibility.
 
 ### Documentation
 
+- Clarify that all packages share the root module's `v<version>` tags and
+  correct the immutable v1.0.0 publication date.
+
 - Add canonical v1 installation, Go support, package selection, a
   compiler-checked example, and support and security navigation.
 
@@ -62,7 +65,7 @@ compatibility.
 - Remove the archived monorepo documentation link; package guidance remains in
   the repository-owned documentation.
 
-## 1.0.0 - 2026-08-25
+## 1.0.0 - 2026-08-26
 
 ### Changed
 
