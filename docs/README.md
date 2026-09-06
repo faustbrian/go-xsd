@@ -1,6 +1,8 @@
 # Documentation
 
 - [Support and conformance](conformance.md)
+- [API guide](api.md)
+- [Compiler-checked example](../example_test.go)
 - [Model and compilation](architecture.md)
 - [Validation](validation.md)
 - [Datatypes](datatypes.md)
@@ -13,6 +15,8 @@
 - [Migration and compatibility](migration.md)
 - [Cookbook](cookbook.md)
 - [FAQ](faq.md)
+- [Support](../SUPPORT.md)
+- [Security policy](../SECURITY.md)
 - [Changelog](../CHANGELOG.md)
 
 The requirement matrix is authoritative when prose and implementation status

@@ -1,9 +1,9 @@
 # Migration and compatibility
 
-The module is pre-release and follows the Go version declared in `go.mod`.
-Public model additions should remain source compatible, but behavior may
-tighten as invalid schemas are detected and missing XML Schema rules become
-enforced.
+The released module follows stable v1 compatibility and requires the Go
+version declared in `go.mod`. Incompatible exported API or documented behavior
+changes require a new major version. Compatible releases may reject additional
+invalid schemas as documented XML Schema rules become enforced.
 
 Review the [specification decision register](specification-decisions.md) before
 upgrading whenever parsing, validation, resolution, or diagnostic behavior can

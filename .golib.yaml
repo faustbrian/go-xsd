@@ -16,7 +16,7 @@ api:
   baselines:
     - module: .
       mode: apidiff
-      path: api/v0.export
+      path: api/v1.export
 operations:
   - module: .
     gate: fuzz
