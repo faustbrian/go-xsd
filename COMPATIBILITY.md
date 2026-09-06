@@ -1,7 +1,9 @@
 # Compatibility Policy
 
-Each releasable directory is an independent Go module and follows semantic
-versioning. Tags use `<module-directory>/v<version>`.
+This repository contains one releasable Go module at its root. The root module
+and all packages beneath it follow semantic versioning and use `v<version>`
+tags. Package directories such as `builder`, `compile`, and `validate` are not
+independently versioned modules.
 
 Before `v1`, minor releases MAY contain reviewed breaking changes, but every
 break MUST be documented with migration guidance. Patch releases MUST remain
