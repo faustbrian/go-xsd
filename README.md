@@ -7,7 +7,7 @@
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-xsd.svg)](https://pkg.go.dev/github.com/faustbrian/go-xsd)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-xsd?sort=semver)](https://github.com/faustbrian/go-xsd/releases)
-[![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
+[![Go](https://img.shields.io/badge/go-1.27.0-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 `xsd` is a secure XML Schema 1.0 parser, compiler, validator, serializer,
@@ -22,7 +22,7 @@ and SOAP tooling without performing implicit file or network access.
 
 ## Install
 
-The stable v1 release requires Go 1.26.6.
+The stable v1 release requires Go 1.27.0.
 
 ```sh
 go get github.com/faustbrian/go-xsd@v1
