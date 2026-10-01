@@ -1,6 +1,6 @@
 # Mutation baseline
 
-`make mutation` delegates the complete production module to the canonical
+`golib mutation --module .` delegates the complete production module to the canonical
 content-addressed repository runner. The pinned runner requires exact 100.00%
 test efficacy and mutant coverage. Every viable mutant must be killed; a
 survivor, timeout, uncovered mutant, malformed report, missing package, or

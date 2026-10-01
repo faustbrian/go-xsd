@@ -18,8 +18,8 @@ requirement. The canonical
 scope, interpretation, security, resource, compatibility, and wire decisions;
 `decisions.md` remains a compatibility pointer.
 
-Run `make provenance` to validate the local records. Set `VERIFY_REMOTE=1` to
-download every pinned resource and verify its current bytes. Remote checking
+Run `./scripts/check-provenance.sh` from the repository root to validate
+the local records. Set `VERIFY_REMOTE=1` to download every pinned resource and verify its current bytes. Remote checking
 is deliberately opt-in and is never part of parsing or compilation.
 
 ## Decision conformance matrix

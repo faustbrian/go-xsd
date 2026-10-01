@@ -5,7 +5,8 @@ concurrently. Resolver work and schema compilation should not occur per
 instance. Resource limits are correctness and security controls, not tuning
 targets.
 
-`make benchmark` runs the owned Go workloads and the JDK JAXP XML Schema
+From the repository root, `make -f verification/package.mk benchmark` runs
+the owned Go workloads and the JDK JAXP XML Schema
 reference engine against the same schema and valid instance. Both engines must
 accept the valid instance, and JAXP must reject the paired invalid instance,
 before reference timing begins. Local and CI execution use the same
