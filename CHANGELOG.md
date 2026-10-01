@@ -5,7 +5,15 @@ compatibility.
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-01
+
 ### Changed
+
+- Require Go 1.27.0 instead of Go 1.26.6. Upgrade consumer toolchains
+  before adopting v1.1.0; XSD APIs, implemented schema support, validation
+  behavior, and serialization contracts are unchanged.
+- Point current verification guidance at the canonical CLI and owned
+  package operations after the shared-runner migration.
 
 - Keep reusable CI and its checked-out tooling on the same v1.8.4 source
   while retaining the checksum-verified v1.4.0 CLI bootstrap.

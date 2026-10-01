@@ -17,7 +17,7 @@ output memory, and emitted bytes. `xsd.Marshal` uses conservative defaults;
 use `xsd.MarshalWithOptions` to lower `MaxDepth`, `MaxComponents`, or
 `MaxOutputBytes` at a trust boundary.
 
-`make hostile` is the focused attack gate for implicit network access, file
+`make check` includes hostile-input and filesystem tests for implicit network access, file
 and symlink escape, DTD and entity input, deep XML and schema models, recursive
 and explosive particles, regex translation, identity XPath amplification, and
 diagnostic growth.

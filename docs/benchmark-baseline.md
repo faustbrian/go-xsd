@@ -20,7 +20,8 @@ Each benchmark runs a correctness check before timing. CI records new raw
 results as artifacts but does not apply a timing threshold until repeated
 runner measurements establish variance and an evidence-based budget.
 
-`make benchmark` also runs compile and validation workloads through the JDK
+From the repository root, `make -f verification/package.mk benchmark` also
+runs compile and validation workloads through the JDK
 JAXP reference engine. The comparison uses the same files under
 `testdata/benchmark`; JAXP must accept `valid.xml` and reject `invalid.xml`
 before timing. Local and CI execution use the same digest-pinned Eclipse
