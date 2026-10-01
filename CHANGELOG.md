@@ -7,6 +7,9 @@ compatibility.
 
 ### Changed
 
+- Keep reusable CI and its checked-out tooling on the same v1.8.4 source
+  while retaining the checksum-verified v1.4.0 CLI bootstrap.
+
 - Align the immutable API evidence path with the released v1 line without
   changing the recorded public API.
 
