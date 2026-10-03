@@ -7,6 +7,11 @@ compatibility.
 
 ### Fixed
 
+- Honor compilation cancellation after schema graph loading, including group
+  expansion, component checks, and schema-set publication. Cancellation returns
+  the context error without publishing a partial set and leaves reusable
+  compilers available for subsequent calls.
+
 - Honor instance-validation cancellation after reads and throughout schema
   assessment, particle matching, facets, and identity processing. Canceled
   validation returns the context error and no partial result; caller-provided
