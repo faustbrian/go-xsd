@@ -5,6 +5,13 @@ compatibility.
 
 ## Unreleased
 
+### Fixed
+
+- Honor instance-validation cancellation after reads and throughout schema
+  assessment, particle matching, facets, and identity processing. Canceled
+  validation returns the context error and no partial result; caller-provided
+  readers remain responsible for interrupting their own blocked reads.
+
 ## 1.1.0 - 2026-10-01
 
 ### Changed

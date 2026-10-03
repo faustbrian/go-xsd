@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -95,7 +96,7 @@ func TestValidateRootPropagatesIDReferenceLimit(t *testing.T) {
 	validator := &Validator{set: set, limits: Limits{MaxDiagnostics: 0}}
 	root := contentNode("", map[xsd.QName]string{{Local: "ref"}: "missing"})
 	root.Name = xsd.QName{Namespace: "urn:test", Local: "root"}
-	if _, err := validator.validateRoot(root); !errors.Is(err, ErrLimitExceeded) {
+	if _, err := validator.validateRoot(context.Background(), root); !errors.Is(err, ErrLimitExceeded) {
 		t.Fatalf("validateRoot() error = %v", err)
 	}
 }
