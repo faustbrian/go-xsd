@@ -60,24 +60,26 @@ func TestCompilerLimitDefaultsAndNegativeValues(t *testing.T) {
 		t.Fatalf("New(defaults) error = %v", err)
 	}
 	wantDefaults := Limits{
-		MaxSchemas:    defaultMaxSchemas,
-		MaxDepth:      defaultMaxDepth,
-		MaxReferences: defaultMaxReferences,
-		MaxBytes:      defaultMaxBytes,
-		MaxComponents: defaultMaxComponents,
-		MaxParticles:  defaultMaxParticles,
+		MaxSchemas:        defaultMaxSchemas,
+		MaxDepth:          defaultMaxDepth,
+		MaxReferences:     defaultMaxReferences,
+		MaxBytes:          defaultMaxBytes,
+		MaxComponents:     defaultMaxComponents,
+		MaxParticles:      defaultMaxParticles,
+		MaxParticleCopies: defaultMaxParticleCopies,
 	}
 	if !reflect.DeepEqual(compiler.limits, wantDefaults) {
 		t.Fatalf("New(defaults) limits = %#v, want %#v", compiler.limits, wantDefaults)
 	}
 
 	for name, limits := range map[string]Limits{
-		"schemas":    {MaxSchemas: -1},
-		"depth":      {MaxDepth: -1},
-		"references": {MaxReferences: -1},
-		"bytes":      {MaxBytes: -1},
-		"components": {MaxComponents: -1},
-		"particles":  {MaxParticles: -1},
+		"schemas":         {MaxSchemas: -1},
+		"depth":           {MaxDepth: -1},
+		"references":      {MaxReferences: -1},
+		"bytes":           {MaxBytes: -1},
+		"components":      {MaxComponents: -1},
+		"particles":       {MaxParticles: -1},
+		"particle copies": {MaxParticleCopies: -1},
 	} {
 		if _, err := New(Options{Limits: limits}); err == nil || err.Error() != "xsd compile: limits must not be negative" {
 			t.Fatalf("New(negative %s) error = %v", name, err)

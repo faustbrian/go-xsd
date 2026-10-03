@@ -5,6 +5,16 @@ compatibility.
 
 ## Unreleased
 
+### Changed (next major)
+
+- Bound cumulative compiler-owned particle copies and synthesized extension
+  wrappers, including temporary redefine content, with the independent
+  `compile.Limits.MaxParticleCopies` policy. Zero selects 1,000,000 slots per
+  compilation; callers may raise it independently for valid schemas requiring
+  more copy work. This intentionally tightens acceptance for the next major
+  release. `MaxParticles` still bounds only the final retained particle count;
+  `MaxDepth` still bounds schema-document composition. No release is implied.
+
 ### Fixed
 
 - Honor compilation cancellation after schema graph loading, including group

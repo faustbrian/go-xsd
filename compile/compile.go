@@ -23,12 +23,13 @@ var (
 )
 
 const (
-	defaultMaxSchemas    = 256
-	defaultMaxDepth      = 64
-	defaultMaxReferences = 4096
-	defaultMaxBytes      = 64 << 20
-	defaultMaxComponents = 100000
-	defaultMaxParticles  = 1000000
+	defaultMaxSchemas        = 256
+	defaultMaxDepth          = 64
+	defaultMaxReferences     = 4096
+	defaultMaxBytes          = 64 << 20
+	defaultMaxComponents     = 100000
+	defaultMaxParticles      = 1000000
+	defaultMaxParticleCopies = 1000000
 )
 
 func compileDepthExceeded(depth int) bool {
@@ -47,6 +48,10 @@ type Limits struct {
 	MaxBytes      int64
 	MaxComponents int
 	MaxParticles  int
+	// MaxParticleCopies bounds cumulative compiler-owned particle slots copied or
+	// synthesized per Compile call, including temporary and redefined content.
+	// Zero selects 1,000,000 independently of MaxParticles (the final count).
+	MaxParticleCopies int
 }
 
 // Options configures a Compiler. A nil Resolver denies every external load.
@@ -91,6 +96,9 @@ func New(options Options) (*Compiler, error) {
 	if limits.MaxParticles == 0 {
 		limits.MaxParticles = defaultMaxParticles
 	}
+	if limits.MaxParticleCopies == 0 {
+		limits.MaxParticleCopies = defaultMaxParticleCopies
+	}
 	resolver := options.Resolver
 	if resolver == nil {
 		resolver = resolve.Deny()
@@ -115,6 +123,9 @@ func validateLimits(limits Limits) error {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
 	if limits.MaxParticles < 0 {
+		return fmt.Errorf("xsd compile: limits must not be negative")
+	}
+	if limits.MaxParticleCopies < 0 {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
 	return nil
@@ -602,6 +613,9 @@ func cloneModelGroup(group *xsd.ModelGroup, owner ...*compileState) *xsd.ModelGr
 		OccursSet:  group.OccursSet,
 		Annotation: cloneAnnotation(group.Annotation, owner...),
 	}
+	if !admitParticleCopies(len(group.Particles), owner) {
+		return nil
+	}
 	clone.Particles = make([]xsd.Particle, len(group.Particles))
 	for index, particle := range group.Particles {
 		if err := compileOwnerError(owner); err != nil {
@@ -678,6 +692,11 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err erro
 		typeKinds:         map[xsd.QName]string{},
 		bytes:             int64(len(root.Content)),
 	}
+	defer func() {
+		if stopped := state.contextError(); stopped != nil {
+			set, err = nil, stopped
+		}
+	}()
 	document, err := xsd.Parse(ctx, root.Content, xsd.ParseOptions{
 		SystemID:         root.URI,
 		MaxDocumentBytes: c.limits.MaxBytes,
@@ -2133,6 +2152,9 @@ func extendContent(base *xsd.ModelGroup, extension *xsd.ModelGroup, owner ...*co
 	}
 	if extension == nil {
 		return cloneModelGroup(base, owner...)
+	}
+	if !admitParticleCopies(2, owner) {
+		return nil
 	}
 	return &xsd.ModelGroup{
 		Compositor: xsd.Sequence,
@@ -3874,6 +3896,8 @@ type instanceKey struct {
 }
 
 type compileState struct {
+	particleCopies    int
+	copyError         error
 	ctx               context.Context
 	compiler          *Compiler
 	resources         map[string]resourceDocument
@@ -3895,10 +3919,38 @@ type compileState struct {
 // Value-space and copy helpers stop work without publishing partial values;
 // Compile gives the caller's context error precedence at the publication owner.
 func (s *compileState) contextError() error {
-	if s == nil || s.ctx == nil {
+	if s == nil {
 		return nil
 	}
-	return s.ctx.Err()
+	if s.ctx != nil {
+		if err := s.ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return s.copyError
+}
+
+// Admission precedes each compiler-owned particle slice allocation. Subtraction
+// keeps cumulative accounting overflow-safe without inspecting expanded trees.
+// Set accessors deliberately have no invocation owner or copy-work policy.
+func admitParticleCopies(count int, owner []*compileState) bool {
+	if len(owner) == 0 || owner[0] == nil {
+		return true
+	}
+	s := owner[0]
+	if s.contextError() != nil {
+		return false
+	}
+	limit := defaultMaxParticleCopies
+	if s.compiler != nil && s.compiler.limits.MaxParticleCopies > 0 {
+		limit = s.compiler.limits.MaxParticleCopies
+	}
+	if count > limit-s.particleCopies {
+		s.copyError = fmt.Errorf("%w: particle copies exceed %d", ErrLimitExceeded, limit)
+		return false
+	}
+	s.particleCopies += count
+	return true
 }
 
 // Shared copy helpers also serve context-free immutable Set accessors.
