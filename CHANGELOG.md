@@ -7,6 +7,14 @@ compatibility.
 
 ### Changed (next major)
 
+- Redact public compiler and built-in resolver error output to fixed categories,
+  preserving cause inspection and sentinel classification through unwrapping.
+  Exact standard cancellation/deadline errors stay unchanged. Failed operations
+  publish no partial schema set or resource, and resolver chains still fall back
+  only on not-found errors. File-open failures retain their underlying OS cause.
+  This intentionally changes default error output for the next major; use
+  explicit trusted inspection for detail. No release is implied.
+
 - Bound XML Schema pattern class-subtraction depth at 256 (outer class counts
   as one), independently of XML depth and byte limits. Add
   `datatype.CompilePatternContext` and propagate compiler/validator contexts

@@ -1,5 +1,24 @@
 # Security and limits
 
+For the next major, `compile.Compiler.Compile` failures and built-in resolver
+constructor/Resolve/Close failures use `xsd compile: failed` or
+`xsd resolve: failed` for supported text/formatting, JSON and logging. Default
+output never evaluates delegated error formatting, marshaling or logging hooks.
+Exact standard `context.Canceled`/`context.DeadlineExceeded` remain unchanged;
+other causes are wrapped without evaluating their text. `Compile.New` already
+uses payload-free option errors and is unchanged.
+
+The original cause remains available through explicit trusted unwrapping,
+`errors.Is` and `errors.As`. Resolver chains still advance only on not-found
+classification; access/operational errors stop. Error returns publish no partial
+Set/Resource, including a partial result returned by a delegated resolver.
+File-open not-found and operational errors retain both their resolver
+classification and underlying OS cause. This does not retroactively restore
+causes previously flattened by unrelated internal compiler formatting.
+Explicit schema data, XSTS field projections and detailed reporting remain
+trusted seams; invalid Go fmt verb/type diagnostics remain outside default
+output protection as described below.
+
 XML Schema pattern translation independently bounds source bytes (1 MiB),
 translated bytes (8 MiB), and class-subtraction nesting (inclusive depth 256,
 outer class depth one). Depth refusal occurs before descending into an excluded
@@ -45,8 +64,8 @@ a nil pointer, and JSON encodes a nil pointer as `null`.
 Its exported `Location` and `Err` remain unchanged for explicit trusted
 inspection through fields, `Unwrap`, `errors.Is` and `errors.As`. Do not log
 those fields outside that trusted boundary. This is an intentional formatting
-compatibility break, not a release announcement. Compiler and resolver error
-output remain outside these shared value protections.
+compatibility break, not a release announcement. Public compiler and built-in
+resolver error boundaries have the separate cause-preserving protections above.
 
 Parser options bound bytes, XML element depth, and total elements before the
 document model is built. Compiler options bound schema bytes, graph depth,

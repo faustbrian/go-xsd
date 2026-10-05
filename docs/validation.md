@@ -6,6 +6,13 @@ accepts caller-provided XML bytes, `ValidateReader` incrementally reads an
 All three entry points share the same validation engine and deterministic
 diagnostics.
 
+For the next major, public compiler and built-in resolver errors expose fixed
+safe categories by default while preserving sentinel/cause inspection through
+explicit trusted unwrapping. Standard context cancellation/deadline values stay
+unchanged; failed operations return no partial Set/Resource. This error-output
+policy does not alter schema data, validity classification or explicit detailed
+diagnostic reporting; see [security](security.md) for the trust boundary.
+
 Input-pattern translation shares `datatype.CompilePatternContext` with the
 compiler and receives the validation operation's context. Character-class
 subtraction is bounded at inclusive depth 256 independently of XML depth.

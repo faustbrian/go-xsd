@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+
+	"github.com/faustbrian/go-xsd/internal/errsafe"
 )
 
 var (
@@ -48,7 +50,8 @@ func Deny() Resolver { return denyResolver{} }
 
 type denyResolver struct{}
 
-func (denyResolver) Resolve(ctx context.Context, request Request) (Resource, error) {
+func (denyResolver) Resolve(ctx context.Context, request Request) (resource Resource, err error) {
+	defer finishResolve(ctx, &resource, &err)
 	if err := ctx.Err(); err != nil {
 		return Resource{}, err
 	}
@@ -62,7 +65,8 @@ type Memory struct {
 
 // NewMemory copies resources into an immutable resolver. Keys must be valid,
 // absolute resource URIs without fragments.
-func NewMemory(resources map[string][]byte) (*Memory, error) {
+func NewMemory(resources map[string][]byte) (resolver *Memory, err error) {
+	defer func() { err = errsafe.Wrap("xsd resolve: failed", err) }()
 	owned := make(map[string][]byte, len(resources))
 	for identity, content := range resources {
 		uri, err := url.Parse(identity)
@@ -75,7 +79,8 @@ func NewMemory(resources map[string][]byte) (*Memory, error) {
 }
 
 // Resolve returns a fresh copy of the configured resource bytes.
-func (r *Memory) Resolve(ctx context.Context, request Request) (Resource, error) {
+func (r *Memory) Resolve(ctx context.Context, request Request) (resource Resource, err error) {
+	defer finishResolve(ctx, &resource, &err)
 	if err := ctx.Err(); err != nil {
 		return Resource{}, err
 	}
@@ -96,7 +101,11 @@ type chain struct {
 	resolvers []Resolver
 }
 
-func (c chain) Resolve(ctx context.Context, request Request) (Resource, error) {
+func (c chain) Resolve(ctx context.Context, request Request) (resource Resource, err error) {
+	defer finishResolve(ctx, &resource, &err)
+	if err := ctx.Err(); err != nil {
+		return Resource{}, err
+	}
 	for _, resolver := range c.resolvers {
 		if resolver == nil {
 			continue
@@ -110,4 +119,16 @@ func (c chain) Resolve(ctx context.Context, request Request) (Resource, error) {
 		}
 	}
 	return Resource{}, fmt.Errorf("%w: %s", ErrNotFound, request.URI)
+}
+
+// Public owners discard partial collaborator results and redact only default
+// output. Unwrapping remains an explicit trusted inspection operation.
+func finishResolve(ctx context.Context, resource *Resource, err *error) {
+	if canceled := ctx.Err(); canceled != nil {
+		*err = canceled
+	}
+	if *err != nil {
+		*resource = Resource{}
+		*err = errsafe.Wrap("xsd resolve: failed", *err)
+	}
 }

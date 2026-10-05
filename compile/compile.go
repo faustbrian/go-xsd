@@ -10,6 +10,7 @@ import (
 
 	xsd "github.com/faustbrian/go-xsd"
 	"github.com/faustbrian/go-xsd/datatype"
+	"github.com/faustbrian/go-xsd/internal/errsafe"
 	"github.com/faustbrian/go-xsd/resolve"
 )
 
@@ -658,6 +659,12 @@ func cloneDocument(document Document, owner ...*compileState) Document {
 
 // Compile parses and resolves a complete bounded schema graph.
 func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err error) {
+	defer func() {
+		if err != nil {
+			set = nil
+			err = errsafe.Wrap("xsd compile: failed", err)
+		}
+	}()
 	defer func() {
 		if ctx != nil {
 			if canceled := ctx.Err(); canceled != nil {
