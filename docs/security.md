@@ -4,6 +4,18 @@ The parser and instance validator forbid DTD directives and do not expand
 external entities. Parsing performs no implicit I/O. Compilation denies file
 and remote resolution unless the caller injects a resolver.
 
+For the next major, non-nil `ParseError` default `Error`, pointer/value `fmt` formats
+(including Go-syntax formats), JSON and `slog` output expose only the fixed
+`xsd: parse failed` category without evaluating cause formatting, marshaling
+or logging callbacks. Nil and zero receivers return that category from
+`Error`; nil `Unwrap` returns nil, `fmt` uses its safe `<nil>` placeholder for
+a nil pointer, and JSON encodes a nil pointer as `null`.
+Its exported `Location` and `Err` remain unchanged for explicit trusted
+inspection through fields, `Unwrap`, `errors.Is` and `errors.As`. Do not log
+those fields outside that trusted boundary. This is an intentional formatting
+compatibility break, not a release announcement. It does not make standalone
+`Location`, validation `Diagnostic`, compiler or resolver error output private.
+
 Parser options bound bytes, XML element depth, and total elements before the
 document model is built. Compiler options bound schema bytes, graph depth,
 documents, references, components, and particles. Validation additionally

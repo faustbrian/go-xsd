@@ -7,6 +7,12 @@ compatibility.
 
 ### Changed (next major)
 
+- Make `ParseError` default text, pointer/value formatting, JSON and logging
+  expose only `xsd: parse failed`, without evaluating supplied cause callbacks.
+  This intentionally breaks verbose error formatting for the next major;
+  trusted callers retain `Location`, `Err`, `Unwrap`, `errors.Is` and
+  `errors.As` for explicit inspection. No release is implied.
+
 - Bound cumulative compiler-owned particle copies and synthesized extension
   wrappers, including temporary redefine content, with the independent
   `compile.Limits.MaxParticleCopies` policy. Zero selects 1,000,000 slots per

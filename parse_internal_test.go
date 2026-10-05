@@ -164,8 +164,9 @@ func TestForeignExtensionElementsAreRejectedAtEverySchemaBoundary(t *testing.T) 
 		`<group name="Items"><f:extension/></group>`,
 	} {
 		source := `<schema xmlns="` + Namespace + `" xmlns:f="urn:extension">` + body + `</schema>`
-		if _, err := Parse(context.Background(), []byte(source), ParseOptions{}); err == nil ||
-			!strings.Contains(err.Error(), "unexpected element") {
+		_, err := Parse(context.Background(), []byte(source), ParseOptions{})
+		var parseErr *ParseError
+		if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), "unexpected element") {
 			t.Fatalf("Parse(%s) error = %v, want unexpected element", body, err)
 		}
 	}
@@ -258,7 +259,8 @@ func TestSimpleContentRestrictionGrammarDoesNotLeakIntoOtherDerivations(t *testi
 			_, err := Parse(context.Background(), []byte(
 				`<schema xmlns="`+Namespace+`"><complexType name="T">`+test.body+`</complexType></schema>`,
 			), ParseOptions{})
-			if err == nil || !strings.Contains(err.Error(), test.want) {
+			var parseErr *ParseError
+			if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), test.want) {
 				t.Fatalf("Parse() error = %v, want %q", err, test.want)
 			}
 		})

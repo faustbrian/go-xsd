@@ -42,25 +42,37 @@ type Diagnostic struct {
 	Location Location
 }
 
-// ParseError adds stable resource location information to a parsing failure.
+// ParseError retains trusted location and cause information for a parsing
+// failure. Default text, formatting, and JSON expose only a fixed category;
+// inspect Location and Err explicitly only inside a trusted boundary.
 type ParseError struct {
 	Location Location
 	Err      error
 }
 
-func (e *ParseError) Error() string {
-	if e.Location.SystemID == "" {
-		return fmt.Sprintf("xsd: line %d, column %d: %v", e.Location.Line, e.Location.Column, e.Err)
-	}
+// Error returns a fixed category, including for nil and zero receivers.
+func (*ParseError) Error() string { return "xsd: parse failed" }
 
-	return fmt.Sprintf(
-		"xsd: %s:%d:%d: %v",
-		e.Location.SystemID,
-		e.Location.Line,
-		e.Location.Column,
-		e.Err,
-	)
+// Format keeps pointer and value formatting, including Go-syntax formatting,
+// from traversing Location or invoking cause formatters. Quoting is retained.
+func (ParseError) Format(state fmt.State, verb rune) {
+	if verb == 'q' {
+		_, _ = state.Write([]byte(`"xsd: parse failed"`))
+		return
+	}
+	_, _ = state.Write([]byte("xsd: parse failed"))
+}
+
+// MarshalJSON keeps pointer and value encoding from traversing trusted fields.
+// As usual, encoding/json encodes a nil pointer as null without calling it.
+func (ParseError) MarshalJSON() ([]byte, error) {
+	return []byte(`"xsd: parse failed"`), nil
 }
 
 // Unwrap supports errors.Is and errors.As.
-func (e *ParseError) Unwrap() error { return e.Err }
+func (e *ParseError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
