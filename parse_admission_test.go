@@ -146,3 +146,116 @@ func TestParseOwnedDuplicateQNameAdmission(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOwnedWorkAdmissionBoundaries(t *testing.T) {
+	const namespaceBytes = int64(2 + len(xsd.Namespace))
+	for _, test := range []struct {
+		name, body string
+		refusals   []int64
+		maximum    int64
+		valid      func(*xsd.Document) bool
+	}{
+		{
+			name: "union member splitting", body: `<xs:simpleType name="U"><xs:union memberTypes="xs:string"/></xs:simpleType>`,
+			refusals: []int64{namespaceBytes + 1 + int64(len("xs:string")) - 1},
+			maximum:  namespaceBytes + 1 + int64(len("xs:string")+len(xsd.Namespace)+len("string")),
+			valid: func(d *xsd.Document) bool {
+				return len(d.SimpleTypes) == 1 && d.SimpleTypes[0].Name == "U" && len(d.SimpleTypes[0].MemberTypes) == 1 && d.SimpleTypes[0].MemberTypes[0] == (xsd.QName{Namespace: xsd.Namespace, Local: "string"})
+			},
+		},
+		{
+			name: "wildcard namespace splitting", body: `<xs:complexType name="C"><xs:anyAttribute namespace="urn:a"/></xs:complexType>`,
+			refusals: []int64{namespaceBytes + 1 + int64(len("urn:a")) - 1}, maximum: namespaceBytes + 1 + int64(len("urn:a")),
+			valid: func(d *xsd.Document) bool {
+				return len(d.ComplexTypes) == 1 && d.ComplexTypes[0].Name == "C" && d.ComplexTypes[0].AttributeWildcard != nil && len(d.ComplexTypes[0].AttributeWildcard.Namespaces) == 1 && d.ComplexTypes[0].AttributeWildcard.Namespaces[0] == "urn:a"
+			},
+		},
+		{
+			// Location retention, three-byte URI-work envelope, resolved URI.
+			name: "URI work", body: `<xs:include schemaLocation="urn:a"/>`,
+			refusals: []int64{namespaceBytes + 2*int64(len("urn:a")) - 1}, maximum: namespaceBytes + 5*int64(len("urn:a")),
+			valid: func(d *xsd.Document) bool {
+				return len(d.References) == 1 && d.References[0].Kind == xsd.ReferenceInclude && d.References[0].Location == "urn:a" && d.References[0].URI == "urn:a"
+			},
+		},
+		{
+			// Redefinitions retain another Location and URI occurrence.
+			name: "retained redefine reference", body: `<xs:redefine schemaLocation="urn:a"/>`,
+			refusals: []int64{namespaceBytes + 7*int64(len("urn:a")) - 1}, maximum: namespaceBytes + 7*int64(len("urn:a")),
+			valid: func(d *xsd.Document) bool {
+				return len(d.References) == 1 && len(d.Redefinitions) == 1 && d.References[0].URI == "urn:a" && d.Redefinitions[0].Reference.URI == "urn:a" && d.Redefinitions[0].Reference.Location == "urn:a"
+			},
+		},
+		{
+			name: "appinfo metadata before capture", body: `<xs:annotation><xs:appinfo source="urn:a"><tool/></xs:appinfo></xs:annotation>`,
+			refusals: []int64{namespaceBytes + int64(len("urn:a")) - 1}, maximum: namespaceBytes + int64(len("urn:a")+len("<tool/>")),
+			valid: func(d *xsd.Document) bool {
+				return len(d.Annotations) == 1 && len(d.Annotations[0].AppInformation) == 1 && d.Annotations[0].AppInformation[0].Source == "urn:a" && d.Annotations[0].AppInformation[0].Content == "<tool/>"
+			},
+		},
+		{
+			// Raw capture, wrapper copy, builder write, retained trimmed text.
+			name: "documentation copy and builder work", body: `<xs:annotation><xs:documentation>a</xs:documentation></xs:annotation>`,
+			refusals: []int64{namespaceBytes + 1, namespaceBytes + 2}, maximum: namespaceBytes + 4,
+			valid: func(d *xsd.Document) bool {
+				return len(d.Annotations) == 1 && len(d.Annotations[0].Documentation) == 1 && d.Annotations[0].Documentation[0].Markup == "a" && d.Annotations[0].Documentation[0].Content == "a"
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := []byte(`<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">` + test.body + `</xs:schema>`)
+			for _, maximum := range test.refusals {
+				document, err := xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: maximum})
+				if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
+					t.Fatal("expected owned-work refusal without a document")
+				}
+			}
+			document, err := xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: test.maximum})
+			if err != nil || document == nil || !test.valid(document) {
+				t.Fatal("exact owned-work allowance changed literal schema semantics")
+			}
+		})
+	}
+}
+
+func TestParseOwnedNamespaceWorkBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		source  string
+		refused int
+	}{
+		{`<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element xmlns:t="urn:t" name="a"/></xs:schema>`, 1},
+		{`<schema xmlns="http://www.w3.org/2001/XMLSchema"><element xmlns="http://www.w3.org/2001/XMLSchema" name="a"/></schema>`, 2},
+	} {
+		document, err := xsd.Parse(context.Background(), []byte(test.source), xsd.ParseOptions{MaxNamespaceEntries: test.refused})
+		if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
+			t.Fatal("expected scope-copy/declaration refusal")
+		}
+		// Root insertion plus two separately owned parent-copy/declaration pairs.
+		document, err = xsd.Parse(context.Background(), []byte(test.source), xsd.ParseOptions{MaxNamespaceEntries: 5})
+		if err != nil || document == nil || len(document.Elements) != 1 || document.Elements[0].Name != "a" {
+			t.Fatal("exact scope allowance changed element identity")
+		}
+	}
+	const namespaceBytes = int64(len(xsd.Namespace))
+	source := []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"/>`)
+	document, err := xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: namespaceBytes - 1})
+	if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
+		t.Fatal("default namespace URI was not admitted")
+	}
+	document, err = xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: namespaceBytes})
+	if err != nil || document == nil || document.Namespaces[""] != xsd.Namespace {
+		t.Fatal("exact default namespace allowance changed binding")
+	}
+
+	// Refused name retention remains sticky through default retention and the
+	// subsequent value-scope copy; no partial model may escape those owners.
+	source = []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"><element name="a" default="b"/></schema>`)
+	document, err = xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: namespaceBytes})
+	if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
+		t.Fatal("retention failure did not remain a limit refusal")
+	}
+	document, err = xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: 2*namespaceBytes + 2})
+	if err != nil || document == nil || len(document.Elements) != 1 || document.Elements[0].Name != "a" || document.Elements[0].Default != "b" || document.Elements[0].ValueNamespaces[""] != xsd.Namespace {
+		t.Fatal("exact retained value allowance changed default/scope")
+	}
+}
