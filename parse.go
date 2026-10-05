@@ -20,18 +20,26 @@ const (
 	defaultMaxElements            = 1000000
 )
 
-// ParseOptions configures a single document parse. A zero byte limit uses a
-// conservative default; a negative value is invalid.
+// ParseOptions configures a single document parse. Zero limits select finite
+// defaults; negative values are invalid. Owned-work limits are independent of
+// serialized source bytes and do not measure exact heap or decoder allocation.
 type ParseOptions struct {
 	SystemID         string
 	MaxDocumentBytes int64
 	MaxDepth         int
 	MaxElements      int
+	// MaxNamespaceEntries bounds cumulative owned namespace copies/declarations,
+	// including rebindings. Zero selects 1,000,000 entries.
+	// MaxModelBytes bounds retained model string occurrences and conservative
+	// URI/annotation copy work. Zero selects 64 MiB. Shared backing storage does
+	// not merge charges for distinct retained model fields or namespace entries.
+	MaxNamespaceEntries int
+	MaxModelBytes       int64
 }
 
 // Parse decodes one XML Schema document without resolving external resources.
 func Parse(ctx context.Context, source []byte, options ParseOptions) (*Document, error) {
-	if options.MaxDocumentBytes < 0 || options.MaxDepth < 0 || options.MaxElements < 0 {
+	if options.MaxDocumentBytes < 0 || options.MaxDepth < 0 || options.MaxElements < 0 || options.MaxNamespaceEntries < 0 || options.MaxModelBytes < 0 {
 		return nil, fmt.Errorf("xsd: parse limits must not be negative")
 	}
 	limit := options.MaxDocumentBytes
@@ -47,13 +55,20 @@ func Parse(ctx context.Context, source []byte, options ParseOptions) (*Document,
 	if int64(len(source)) > limit {
 		return nil, fmt.Errorf("%w: document bytes exceed %d", ErrLimitExceeded, limit)
 	}
-	if err := validateAnnotationPlacement(ctx, source, options); err != nil {
+	p := newSchemaParser(ctx, source, options)
+	if err := p.prepareAnnotationSpans(options); err != nil {
 		return nil, err
 	}
-	return parseValidated(ctx, source, options)
+	return parseValidated(ctx, source, options, p)
 }
 
-func parseValidated(ctx context.Context, source []byte, options ParseOptions) (*Document, error) {
+func parseValidated(ctx context.Context, source []byte, options ParseOptions, owner ...*schemaParser) (*Document, error) {
+	p := newSchemaParser(ctx, source, options)
+	if len(owner) > 0 {
+		p = owner[0]
+	} else if err := p.prepareAnnotationSpans(options); err != nil {
+		return nil, err
+	}
 	decoder := xml.NewDecoder(&contextReader{ctx: ctx, reader: bytes.NewReader(source)})
 	decoder.Strict = true
 	decoder.Entity = map[string]string{}
@@ -74,7 +89,11 @@ func parseValidated(ctx context.Context, source []byte, options ParseOptions) (*
 			if value.Name.Space != Namespace || value.Name.Local != "schema" {
 				return nil, located(decoder, options.SystemID, ErrNotSchema)
 			}
-			return parseDocument(decoder, value, options.SystemID)
+			document, err := p.parseDocument(decoder, value, options.SystemID)
+			if p.err != nil {
+				return nil, located(decoder, options.SystemID, p.err)
+			}
+			return document, err
 		}
 	}
 }
@@ -84,12 +103,15 @@ type annotationFrame struct {
 	elements        int
 	opaqueExtension bool
 	notationBase    bool
+	captureStart    int64
+	capture         bool
 }
 
 func validateAnnotationPlacement(
 	ctx context.Context,
 	source []byte,
 	options ParseOptions,
+	owner ...*schemaParser,
 ) error {
 	systemID := options.SystemID
 	decoder := xml.NewDecoder(&contextReader{ctx: ctx, reader: bytes.NewReader(source)})
@@ -101,6 +123,7 @@ func validateAnnotationPlacement(
 	notationReferences := make([]string, 0)
 	identifiers := make(map[string]struct{})
 	for {
+		before := decoder.InputOffset()
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
 			for _, reference := range notationReferences {
@@ -249,14 +272,20 @@ func validateAnnotationPlacement(
 			}
 			stack = append(stack, annotationFrame{
 				name: value.Name, opaqueExtension: opaque, notationBase: notationBase,
+				capture:      value.Name.Space == Namespace && (value.Name.Local == "documentation" || value.Name.Local == "appinfo"),
+				captureStart: decoder.InputOffset(),
 			})
 		case xml.EndElement:
+			frame := stack[len(stack)-1]
+			if frame.capture && len(owner) > 0 {
+				owner[0].annotationSpans[frame.captureStart] = before - frame.captureStart
+			}
 			stack = stack[:len(stack)-1]
 		}
 	}
 }
 
-func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string) (*Document, error) {
+func (p *schemaParser) parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string) (*Document, error) {
 	if err := validateSchemaAttributes(
 		root,
 		"attributeFormDefault",
@@ -268,6 +297,9 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 		"version",
 	); err != nil {
 		return nil, located(decoder, systemID, err)
+	}
+	if !p.chargeBytes(len(systemID)) || !p.chargeBytes(len(systemID)) || !p.admitRootNamespaces(root) {
+		return nil, p.err
 	}
 	document := &Document{
 		SystemID:             systemID,
@@ -284,55 +316,55 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 		case "http://www.w3.org/XML/1998/namespace":
 			switch attribute.Name.Local {
 			case "base":
-				baseURI, err := resolveURI(systemID, attribute.Value)
+				baseURI, err := p.resolveURI(systemID, attribute.Value)
 				if err != nil {
 					return nil, located(decoder, systemID, err)
 				}
 				document.BaseURI = baseURI
 			case "lang":
-				document.Language = attribute.Value
+				document.Language = p.retain(attribute.Value)
 			}
 		case "":
 			switch attribute.Name.Local {
 			case "xmlns":
 				document.Namespaces[""] = attribute.Value
 			case "targetNamespace":
-				document.TargetNamespace = attribute.Value
+				document.TargetNamespace = p.retain(attribute.Value)
 			case "id":
-				document.ID = attribute.Value
+				document.ID = p.retain(attribute.Value)
 			case "elementFormDefault":
-				form, err := parseForm(attribute.Value)
+				form, err := parseForm(p.retain(attribute.Value))
 				if err != nil {
 					return nil, located(decoder, systemID, err)
 				}
 				document.ElementFormDefault = form
 			case "attributeFormDefault":
-				form, err := parseForm(attribute.Value)
+				form, err := parseForm(p.retain(attribute.Value))
 				if err != nil {
 					return nil, located(decoder, systemID, err)
 				}
 				document.AttributeFormDefault = form
 			case "blockDefault":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return nil, located(decoder, systemID, err)
 				}
 				document.BlockDefault = set
 			case "finalDefault":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return nil, located(decoder, systemID, err)
 				}
 				document.FinalDefault = set
 			case "version":
-				document.Version = attribute.Value
+				document.Version = p.retain(attribute.Value)
 			}
 		}
 	}
 
 	componentsStarted := false
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return nil, located(decoder, systemID, err)
 		}
@@ -341,7 +373,7 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 			return nil, located(decoder, systemID, ErrDTDForbidden)
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return nil, located(decoder, systemID, parseErr)
 				}
@@ -356,13 +388,13 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 							fmt.Errorf("xsd: %s must precede schema components", kind),
 						)
 					}
-					reference, parseErr := parseSchemaReference(kind, document.BaseURI, value)
+					reference, parseErr := p.parseSchemaReference(kind, document.BaseURI, value)
 					if parseErr != nil {
 						return nil, located(decoder, systemID, parseErr)
 					}
 					document.References = append(document.References, reference)
 					if kind == ReferenceRedefine {
-						redefinition, redefineErr := parseRedefinition(
+						redefinition, redefineErr := p.parseRedefinition(
 							decoder,
 							value,
 							reference,
@@ -374,7 +406,7 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 						document.Redefinitions = append(document.Redefinitions, redefinition)
 						document.References[len(document.References)-1] = redefinition.Reference
 					} else {
-						annotations, parseErr := parseAnnotationChildren(decoder, value)
+						annotations, parseErr := p.parseAnnotationChildren(decoder, value)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
@@ -384,18 +416,18 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 					componentsStarted = true
 					switch value.Name.Local {
 					case "notation":
-						notation, parseErr := parseNotation(decoder, value)
+						notation, parseErr := p.parseNotation(decoder, value)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
 						document.Notations = append(document.Notations, notation)
 					case "element":
-						element, parseErr := parseElement(value, document.Namespaces)
+						element, parseErr := p.parseElement(value, document.Namespaces)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
 						document.Elements = append(document.Elements, element)
-						if err := parseElementBody(
+						if err := p.parseElementBody(
 							decoder,
 							value,
 							&document.Elements[len(document.Elements)-1],
@@ -404,31 +436,31 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 							return nil, located(decoder, systemID, err)
 						}
 					case "attribute":
-						attribute, parseErr := parseAttribute(value, document.Namespaces)
+						attribute, parseErr := p.parseAttribute(value, document.Namespaces)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
 						document.Attributes = append(document.Attributes, attribute)
-						inline, annotations, err := parseAttributeBody(decoder, value, document.Namespaces)
+						inline, annotations, err := p.parseAttributeBody(decoder, value, document.Namespaces)
 						if err != nil {
 							return nil, located(decoder, systemID, err)
 						}
 						document.Attributes[len(document.Attributes)-1].InlineSimpleType = inline
 						document.Attributes[len(document.Attributes)-1].Annotation = annotations
 					case "simpleType":
-						simpleType, parseErr := parseSimpleType(decoder, value, document.Namespaces)
+						simpleType, parseErr := p.parseSimpleType(decoder, value, document.Namespaces)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
 						document.SimpleTypes = append(document.SimpleTypes, simpleType)
 					case "complexType":
-						complexType, parseErr := parseComplexType(decoder, value, document.Namespaces)
+						complexType, parseErr := p.parseComplexType(decoder, value, document.Namespaces)
 						if parseErr != nil {
 							return nil, located(decoder, systemID, parseErr)
 						}
 						document.ComplexTypes = append(document.ComplexTypes, complexType)
 					case "group":
-						group, parseErr := parseModelGroupDefinition(
+						group, parseErr := p.parseModelGroupDefinition(
 							decoder,
 							value,
 							document.Namespaces,
@@ -438,7 +470,7 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 						}
 						document.ModelGroups = append(document.ModelGroups, group)
 					case "attributeGroup":
-						group, parseErr := parseAttributeGroupDefinition(
+						group, parseErr := p.parseAttributeGroupDefinition(
 							decoder,
 							value,
 							document.Namespaces,
@@ -466,7 +498,7 @@ func parseDocument(decoder *xml.Decoder, root xml.StartElement, systemID string)
 	}
 }
 
-func parseNotation(decoder *xml.Decoder, start xml.StartElement) (Notation, error) {
+func (p *schemaParser) parseNotation(decoder *xml.Decoder, start xml.StartElement) (Notation, error) {
 	if err := validateSchemaAttributes(start, "id", "name", "public", "system"); err != nil {
 		return Notation{}, err
 	}
@@ -475,18 +507,18 @@ func parseNotation(decoder *xml.Decoder, start xml.StartElement) (Notation, erro
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				notation.ID = attribute.Value
+				notation.ID = p.retain(attribute.Value)
 			case "name":
-				notation.Name = attribute.Value
+				notation.Name = p.retain(attribute.Value)
 			case "public":
-				notation.Public = attribute.Value
+				notation.Public = p.retain(attribute.Value)
 			case "system":
-				notation.System = attribute.Value
+				notation.System = p.retain(attribute.Value)
 			}
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return Notation{}, err
 		}
@@ -495,7 +527,7 @@ func parseNotation(decoder *xml.Decoder, start xml.StartElement) (Notation, erro
 			return Notation{}, ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return Notation{}, parseErr
 				}
@@ -511,7 +543,7 @@ func parseNotation(decoder *xml.Decoder, start xml.StartElement) (Notation, erro
 	}
 }
 
-func parseRedefinition(
+func (p *schemaParser) parseRedefinition(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	reference SchemaReference,
@@ -520,10 +552,15 @@ func parseRedefinition(
 	if err := validateSchemaAttributes(start, "id", "schemaLocation"); err != nil {
 		return Redefinition{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
+	// This reference is retained both in Document.References and Redefinitions.
+	if !p.chargeBytes(len(reference.ID)) || !p.chargeBytes(len(reference.Namespace)) ||
+		!p.chargeBytes(len(reference.Location)) || !p.chargeBytes(len(reference.URI)) {
+		return Redefinition{}, p.err
+	}
 	redefinition := Redefinition{Reference: reference}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return Redefinition{}, err
 		}
@@ -535,7 +572,7 @@ func parseRedefinition(
 				return Redefinition{}, skipUnsupportedElement(decoder, value)
 			}
 			if value.Name.Local == "annotation" {
-				annotation, parseErr := parseAnnotation(decoder, value)
+				annotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return Redefinition{}, parseErr
 				}
@@ -543,25 +580,25 @@ func parseRedefinition(
 			} else {
 				switch value.Name.Local {
 				case "simpleType":
-					definition, parseErr := parseSimpleType(decoder, value, namespaces)
+					definition, parseErr := p.parseSimpleType(decoder, value, namespaces)
 					if parseErr != nil {
 						return Redefinition{}, parseErr
 					}
 					redefinition.SimpleTypes = append(redefinition.SimpleTypes, definition)
 				case "complexType":
-					definition, parseErr := parseComplexType(decoder, value, namespaces)
+					definition, parseErr := p.parseComplexType(decoder, value, namespaces)
 					if parseErr != nil {
 						return Redefinition{}, parseErr
 					}
 					redefinition.ComplexTypes = append(redefinition.ComplexTypes, definition)
 				case "group":
-					definition, parseErr := parseModelGroupDefinition(decoder, value, namespaces)
+					definition, parseErr := p.parseModelGroupDefinition(decoder, value, namespaces)
 					if parseErr != nil {
 						return Redefinition{}, parseErr
 					}
 					redefinition.ModelGroups = append(redefinition.ModelGroups, definition)
 				case "attributeGroup":
-					definition, parseErr := parseAttributeGroupDefinition(decoder, value, namespaces)
+					definition, parseErr := p.parseAttributeGroupDefinition(decoder, value, namespaces)
 					if parseErr != nil {
 						return Redefinition{}, parseErr
 					}
@@ -578,7 +615,7 @@ func parseRedefinition(
 	}
 }
 
-func parseElement(start xml.StartElement, namespaces map[string]string) (Element, error) {
+func (p *schemaParser) parseElement(start xml.StartElement, namespaces map[string]string) (Element, error) {
 	if err := validateSchemaAttributes(
 		start,
 		"abstract",
@@ -598,35 +635,35 @@ func parseElement(start xml.StartElement, namespaces map[string]string) (Element
 	); err != nil {
 		return Element{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var element Element
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				element.ID = attribute.Value
+				element.ID = p.retain(attribute.Value)
 			case "name":
-				element.Name = attribute.Value
+				element.Name = p.retain(attribute.Value)
 			case "type":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return Element{}, err
 				}
 				element.Type = name
 			case "ref":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return Element{}, err
 				}
 				element.Ref = name
 			case "substitutionGroup":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return Element{}, err
 				}
 				element.SubstitutionGroup = name
 			case "form":
-				form, err := parseForm(attribute.Value)
+				form, err := parseForm(p.retain(attribute.Value))
 				if err != nil {
 					return Element{}, err
 				}
@@ -644,19 +681,19 @@ func parseElement(start xml.StartElement, namespaces map[string]string) (Element
 				}
 				element.Nillable = value
 			case "default":
-				element.Default = attribute.Value
+				element.Default = p.retain(attribute.Value)
 				element.DefaultSet = true
 			case "fixed":
-				element.Fixed = attribute.Value
+				element.Fixed = p.retain(attribute.Value)
 				element.FixedSet = true
 			case "block":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return Element{}, err
 				}
 				element.Block = set
 			case "final":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return Element{}, err
 				}
@@ -665,21 +702,21 @@ func parseElement(start xml.StartElement, namespaces map[string]string) (Element
 		}
 	}
 	if element.DefaultSet || element.FixedSet {
-		element.ValueNamespaces = cloneNamespaces(namespaces)
+		element.ValueNamespaces = p.cloneNamespaces(namespaces)
 	}
 	return element, nil
 }
 
-func parseElementBody(
+func (p *schemaParser) parseElementBody(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	element *Element,
 	namespaces map[string]string,
 ) error {
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	identityConstraintsStarted := false
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return err
 		}
@@ -690,7 +727,7 @@ func parseElementBody(
 			if value.Name.Space == Namespace {
 				switch value.Name.Local {
 				case "annotation":
-					annotation, parseErr := parseAnnotation(decoder, value)
+					annotation, parseErr := p.parseAnnotation(decoder, value)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -702,7 +739,7 @@ func parseElementBody(
 					if element.InlineSimpleType != nil || element.InlineComplexType != nil {
 						return fmt.Errorf("xsd: element has multiple inline types")
 					}
-					typeDefinition, parseErr := parseSimpleType(decoder, value, namespaces)
+					typeDefinition, parseErr := p.parseSimpleType(decoder, value, namespaces)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -714,7 +751,7 @@ func parseElementBody(
 					if element.InlineSimpleType != nil || element.InlineComplexType != nil {
 						return fmt.Errorf("xsd: element has multiple inline types")
 					}
-					typeDefinition, parseErr := parseComplexType(decoder, value, namespaces)
+					typeDefinition, parseErr := p.parseComplexType(decoder, value, namespaces)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -722,7 +759,7 @@ func parseElementBody(
 				case string(IdentityUnique), string(IdentityKey), string(IdentityKeyRef):
 					kind := IdentityKind(value.Name.Local)
 					identityConstraintsStarted = true
-					constraint, parseErr := parseIdentityConstraint(
+					constraint, parseErr := p.parseIdentityConstraint(
 						decoder,
 						value,
 						kind,
@@ -749,7 +786,7 @@ func parseElementBody(
 	}
 }
 
-func parseIdentityConstraint(
+func (p *schemaParser) parseIdentityConstraint(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	kind IdentityKind,
@@ -758,20 +795,20 @@ func parseIdentityConstraint(
 	if err := validateSchemaAttributes(start, "id", "name", "refer"); err != nil {
 		return IdentityConstraint{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	constraint := IdentityConstraint{
 		Kind:       kind,
-		Namespaces: cloneNamespaces(namespaces),
+		Namespaces: p.cloneNamespaces(namespaces),
 	}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				constraint.ID = attribute.Value
+				constraint.ID = p.retain(attribute.Value)
 			case "name":
-				constraint.Name = attribute.Value
+				constraint.Name = p.retain(attribute.Value)
 			case "refer":
-				reference, err := parseQName(attribute.Value, namespaces)
+				reference, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return IdentityConstraint{}, err
 				}
@@ -780,7 +817,7 @@ func parseIdentityConstraint(
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return IdentityConstraint{}, err
 		}
@@ -789,7 +826,7 @@ func parseIdentityConstraint(
 			return IdentityConstraint{}, ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				annotation, parseErr := parseAnnotation(decoder, value)
+				annotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return IdentityConstraint{}, parseErr
 				}
@@ -806,9 +843,9 @@ func parseIdentityConstraint(
 						if attribute.Name.Space == "" {
 							switch attribute.Name.Local {
 							case "id":
-								id = attribute.Value
+								id = p.retain(attribute.Value)
 							case "xpath":
-								xpath = attribute.Value
+								xpath = p.retain(attribute.Value)
 							}
 						}
 					}
@@ -830,7 +867,7 @@ func parseIdentityConstraint(
 						constraint.Fields = append(constraint.Fields, xpath)
 						constraint.FieldIDs = append(constraint.FieldIDs, id)
 					}
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return IdentityConstraint{}, parseErr
 					}
@@ -857,7 +894,10 @@ func parseIdentityConstraint(
 	}
 }
 
-func cloneNamespaces(namespaces map[string]string) map[string]string {
+func (p *schemaParser) cloneNamespaces(namespaces map[string]string) map[string]string {
+	if !p.admitNamespaceCopy(namespaces) {
+		return nil
+	}
 	clone := make(map[string]string, len(namespaces))
 	for prefix, namespace := range namespaces {
 		clone[prefix] = namespace
@@ -905,71 +945,89 @@ func attributeValue(start xml.StartElement, name string) string {
 	return ""
 }
 
-func namespaceScope(parent map[string]string, start xml.StartElement) map[string]string {
-	result := parent
-	cloned := false
+func (p *schemaParser) namespaceScope(parent map[string]string, start xml.StartElement) map[string]string {
+	declarations := 0
 	for _, attribute := range start.Attr {
-		prefix := ""
-		if attribute.Name.Space == "" && attribute.Name.Local == "xmlns" {
-			// The default namespace uses the empty prefix.
-		} else if attribute.Name.Space == "xmlns" {
-			prefix = attribute.Name.Local
-		} else {
-			continue
+		if attribute.Name.Space == "xmlns" || attribute.Name.Space == "" && attribute.Name.Local == "xmlns" {
+			declarations++
 		}
-		if !cloned {
-			result = cloneNamespaces(parent)
-			cloned = true
+	}
+	if declarations == 0 {
+		return parent
+	}
+	if !p.admitNamespaceCopy(parent) {
+		return nil
+	}
+	for _, attribute := range start.Attr {
+		if attribute.Name.Space == "xmlns" {
+			if !p.admitNamespace(attribute.Name.Local, attribute.Value) {
+				return nil
+			}
+		} else if attribute.Name.Space == "" && attribute.Name.Local == "xmlns" {
+			if !p.admitNamespace("", attribute.Value) {
+				return nil
+			}
 		}
-		result[prefix] = attribute.Value
+	}
+	// All copy/declaration charges precede owned map capacity and insertion.
+	result := make(map[string]string, len(parent))
+	for prefix, uri := range parent {
+		result[prefix] = uri
+	}
+	for _, attribute := range start.Attr {
+		if attribute.Name.Space == "xmlns" {
+			result[attribute.Name.Local] = attribute.Value
+		} else if attribute.Name.Space == "" && attribute.Name.Local == "xmlns" {
+			result[""] = attribute.Value
+		}
 	}
 	return result
 }
 
-func parseAttribute(start xml.StartElement, namespaces map[string]string) (Attribute, error) {
+func (p *schemaParser) parseAttribute(start xml.StartElement, namespaces map[string]string) (Attribute, error) {
 	if err := validateSchemaAttributes(start, "default", "fixed", "id", "name", "type"); err != nil {
 		return Attribute{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var declaration Attribute
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				declaration.ID = attribute.Value
+				declaration.ID = p.retain(attribute.Value)
 			case "name":
-				declaration.Name = attribute.Value
+				declaration.Name = p.retain(attribute.Value)
 			case "type":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return Attribute{}, err
 				}
 				declaration.Type = name
 			case "default":
-				declaration.Default = attribute.Value
+				declaration.Default = p.retain(attribute.Value)
 				declaration.DefaultSet = true
 			case "fixed":
-				declaration.Fixed = attribute.Value
+				declaration.Fixed = p.retain(attribute.Value)
 				declaration.FixedSet = true
 			}
 		}
 	}
 	if declaration.DefaultSet || declaration.FixedSet {
-		declaration.ValueNamespaces = cloneNamespaces(namespaces)
+		declaration.ValueNamespaces = p.cloneNamespaces(namespaces)
 	}
 	return declaration, nil
 }
 
-func parseAttributeBody(
+func (p *schemaParser) parseAttributeBody(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
 ) (*SimpleType, *Annotation, error) {
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var inline *SimpleType
 	var annotation *Annotation
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -979,7 +1037,7 @@ func parseAttributeBody(
 		case xml.StartElement:
 			switch value.Name {
 			case xml.Name{Space: Namespace, Local: "annotation"}:
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return nil, nil, parseErr
 				}
@@ -988,7 +1046,7 @@ func parseAttributeBody(
 				if inline != nil {
 					return nil, nil, fmt.Errorf("xsd: attribute has multiple inline types")
 				}
-				typeDefinition, parseErr := parseSimpleType(decoder, value, namespaces)
+				typeDefinition, parseErr := p.parseSimpleType(decoder, value, namespaces)
 				if parseErr != nil {
 					return nil, nil, parseErr
 				}
@@ -1004,7 +1062,7 @@ func parseAttributeBody(
 	}
 }
 
-func parseSimpleType(
+func (p *schemaParser) parseSimpleType(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
@@ -1012,17 +1070,17 @@ func parseSimpleType(
 	if err := validateSchemaAttributes(start, "final", "id", "name"); err != nil {
 		return SimpleType{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var simpleType SimpleType
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				simpleType.ID = attribute.Value
+				simpleType.ID = p.retain(attribute.Value)
 			case "name":
-				simpleType.Name = attribute.Value
+				simpleType.Name = p.retain(attribute.Value)
 			case "final":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return SimpleType{}, err
 				}
@@ -1031,7 +1089,7 @@ func parseSimpleType(
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return SimpleType{}, err
 		}
@@ -1040,10 +1098,10 @@ func parseSimpleType(
 			return SimpleType{}, ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name.Space == Namespace {
-				childNamespaces := namespaceScope(namespaces, value)
+				childNamespaces := p.namespaceScope(namespaces, value)
 				switch value.Name.Local {
 				case "annotation":
-					annotation, parseErr := parseAnnotation(decoder, value)
+					annotation, parseErr := p.parseAnnotation(decoder, value)
 					if parseErr != nil {
 						return SimpleType{}, parseErr
 					}
@@ -1056,12 +1114,12 @@ func parseSimpleType(
 						return SimpleType{}, attributeErr
 					}
 					simpleType.Variety = SimpleRestriction
-					simpleType.VarietyID = attributeValue(value, "id")
+					simpleType.VarietyID = p.retain(attributeValue(value, "id"))
 					for _, attribute := range value.Attr {
 						if attribute.Name.Space == "" {
 							switch attribute.Name.Local {
 							case "base":
-								base, parseErr := parseQName(attribute.Value, childNamespaces)
+								base, parseErr := p.parseQName(attribute.Value, childNamespaces)
 								if parseErr != nil {
 									return SimpleType{}, parseErr
 								}
@@ -1069,7 +1127,7 @@ func parseSimpleType(
 							}
 						}
 					}
-					if parseErr := parseRestrictionFacets(
+					if parseErr := p.parseRestrictionFacets(
 						decoder,
 						value,
 						&simpleType,
@@ -1085,12 +1143,12 @@ func parseSimpleType(
 						return SimpleType{}, attributeErr
 					}
 					simpleType.Variety = SimpleList
-					simpleType.VarietyID = attributeValue(value, "id")
+					simpleType.VarietyID = p.retain(attributeValue(value, "id"))
 					for _, attribute := range value.Attr {
 						if attribute.Name.Space == "" {
 							switch attribute.Name.Local {
 							case "itemType":
-								itemType, parseErr := parseQName(attribute.Value, childNamespaces)
+								itemType, parseErr := p.parseQName(attribute.Value, childNamespaces)
 								if parseErr != nil {
 									return SimpleType{}, parseErr
 								}
@@ -1098,7 +1156,7 @@ func parseSimpleType(
 							}
 						}
 					}
-					children, annotation, parseErr := parseInlineSimpleTypes(decoder, value, childNamespaces)
+					children, annotation, parseErr := p.parseInlineSimpleTypes(decoder, value, childNamespaces)
 					if parseErr != nil {
 						return SimpleType{}, parseErr
 					}
@@ -1117,13 +1175,16 @@ func parseSimpleType(
 						return SimpleType{}, attributeErr
 					}
 					simpleType.Variety = SimpleUnion
-					simpleType.VarietyID = attributeValue(value, "id")
+					simpleType.VarietyID = p.retain(attributeValue(value, "id"))
 					for _, attribute := range value.Attr {
 						if attribute.Name.Space == "" {
 							switch attribute.Name.Local {
 							case "memberTypes":
+								if !p.chargeBytes(len(attribute.Value)) {
+									return SimpleType{}, p.err
+								}
 								for _, member := range strings.Fields(attribute.Value) {
-									memberType, parseErr := parseQName(member, childNamespaces)
+									memberType, parseErr := p.parseQName(member, childNamespaces)
 									if parseErr != nil {
 										return SimpleType{}, parseErr
 									}
@@ -1132,7 +1193,7 @@ func parseSimpleType(
 							}
 						}
 					}
-					children, annotation, parseErr := parseInlineSimpleTypes(decoder, value, childNamespaces)
+					children, annotation, parseErr := p.parseInlineSimpleTypes(decoder, value, childNamespaces)
 					if parseErr != nil {
 						return SimpleType{}, parseErr
 					}
@@ -1157,16 +1218,16 @@ func parseSimpleType(
 	}
 }
 
-func parseInlineSimpleTypes(
+func (p *schemaParser) parseInlineSimpleTypes(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
 ) ([]SimpleType, *Annotation, error) {
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var result []SimpleType
 	var annotation *Annotation
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1176,13 +1237,13 @@ func parseInlineSimpleTypes(
 		case xml.StartElement:
 			switch value.Name {
 			case xml.Name{Space: Namespace, Local: "annotation"}:
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return nil, nil, parseErr
 				}
 				annotation = &parsedAnnotation
 			case xml.Name{Space: Namespace, Local: "simpleType"}:
-				typeDefinition, parseErr := parseSimpleType(decoder, value, namespaces)
+				typeDefinition, parseErr := p.parseSimpleType(decoder, value, namespaces)
 				if parseErr != nil {
 					return nil, nil, parseErr
 				}
@@ -1198,16 +1259,16 @@ func parseInlineSimpleTypes(
 	}
 }
 
-func parseRestrictionFacets(
+func (p *schemaParser) parseRestrictionFacets(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	simpleType *SimpleType,
 	namespaces map[string]string,
 ) error {
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	facetsStarted := false
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return err
 		}
@@ -1218,7 +1279,7 @@ func parseRestrictionFacets(
 			if value.Name.Space == Namespace {
 				switch value.Name.Local {
 				case "annotation":
-					annotation, parseErr := parseAnnotation(decoder, value)
+					annotation, parseErr := p.parseAnnotation(decoder, value)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -1230,7 +1291,7 @@ func parseRestrictionFacets(
 					if facetsStarted {
 						return fmt.Errorf("xsd: restriction base type must precede facets")
 					}
-					base, parseErr := parseSimpleType(decoder, value, namespaces)
+					base, parseErr := p.parseSimpleType(decoder, value, namespaces)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -1238,7 +1299,7 @@ func parseRestrictionFacets(
 				default:
 					if _, ok := parseFacetKind(value.Name.Local); ok {
 						facetsStarted = true
-						facet, parseErr := parseFacet(decoder, value, namespaces)
+						facet, parseErr := p.parseFacet(decoder, value, namespaces)
 						if parseErr != nil {
 							return parseErr
 						}
@@ -1258,7 +1319,7 @@ func parseRestrictionFacets(
 	}
 }
 
-func parseFacet(
+func (p *schemaParser) parseFacet(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
@@ -1272,15 +1333,15 @@ func parseFacet(
 	}
 	facet := Facet{
 		Kind:       kind,
-		Namespaces: cloneNamespaces(namespaceScope(namespaces, start)),
+		Namespaces: p.cloneNamespaces(p.namespaceScope(namespaces, start)),
 	}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				facet.ID = attribute.Value
+				facet.ID = p.retain(attribute.Value)
 			case "value":
-				facet.Value = attribute.Value
+				facet.Value = p.retain(attribute.Value)
 			case "fixed":
 				fixed, err := parseBoolean(attribute.Value)
 				if err != nil {
@@ -1290,7 +1351,7 @@ func parseFacet(
 			}
 		}
 	}
-	annotation, err := parseAnnotationChildren(decoder, start)
+	annotation, err := p.parseAnnotationChildren(decoder, start)
 	if err != nil {
 		return Facet{}, err
 	}
@@ -1310,7 +1371,7 @@ func parseFacetKind(local string) (FacetKind, bool) {
 	}
 }
 
-func parseComplexType(
+func (p *schemaParser) parseComplexType(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
@@ -1326,16 +1387,16 @@ func parseComplexType(
 	); err != nil {
 		return ComplexType{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	var complexType ComplexType
 	attributesStarted := false
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				complexType.ID = attribute.Value
+				complexType.ID = p.retain(attribute.Value)
 			case "name":
-				complexType.Name = attribute.Value
+				complexType.Name = p.retain(attribute.Value)
 			case "abstract":
 				value, err := parseBoolean(attribute.Value)
 				if err != nil {
@@ -1350,13 +1411,13 @@ func parseComplexType(
 				complexType.Mixed = value
 				complexType.MixedSet = true
 			case "block":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return ComplexType{}, err
 				}
 				complexType.Block = set
 			case "final":
-				set, err := parseDerivationSet(attribute.Value)
+				set, err := parseDerivationSet(p.retain(attribute.Value))
 				if err != nil {
 					return ComplexType{}, err
 				}
@@ -1366,7 +1427,7 @@ func parseComplexType(
 	}
 
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return ComplexType{}, err
 		}
@@ -1377,7 +1438,7 @@ func parseComplexType(
 			if value.Name.Space == Namespace {
 				switch value.Name.Local {
 				case "annotation":
-					annotation, parseErr := parseAnnotation(decoder, value)
+					annotation, parseErr := p.parseAnnotation(decoder, value)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
@@ -1389,11 +1450,11 @@ func parseComplexType(
 					if complexType.Derivation != "" || complexType.Content != nil {
 						return ComplexType{}, fmt.Errorf("xsd: complex type has multiple content models")
 					}
-					particle, parseErr := parseGroupReferenceParticle(value, namespaces)
+					particle, parseErr := p.parseGroupReferenceParticle(value, namespaces)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
@@ -1406,11 +1467,11 @@ func parseComplexType(
 					if complexType.AttributeWildcard != nil {
 						return ComplexType{}, fmt.Errorf("xsd: complex type has multiple attribute wildcards")
 					}
-					wildcard, parseErr := parseWildcard(value)
+					wildcard, parseErr := p.parseWildcard(value)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
@@ -1424,7 +1485,7 @@ func parseComplexType(
 						return ComplexType{}, fmt.Errorf("xsd: complex type has multiple content models")
 					}
 					complexType.SimpleContent = value.Name.Local == "simpleContent"
-					if parseErr := parseContentDerivation(
+					if parseErr := p.parseContentDerivation(
 						decoder,
 						value,
 						&complexType,
@@ -1437,12 +1498,12 @@ func parseComplexType(
 						return ComplexType{}, fmt.Errorf("xsd: attribute must precede anyAttribute")
 					}
 					attributesStarted = true
-					attribute, parseErr := parseAttributeUse(value, namespaces)
+					attribute, parseErr := p.parseAttributeUse(value, namespaces)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
 					complexType.Attributes = append(complexType.Attributes, attribute)
-					inline, annotations, err := parseAttributeBody(decoder, value, namespaces)
+					inline, annotations, err := p.parseAttributeBody(decoder, value, namespaces)
 					if err != nil {
 						return ComplexType{}, err
 					}
@@ -1453,7 +1514,7 @@ func parseComplexType(
 						return ComplexType{}, fmt.Errorf("xsd: attributeGroup must precede anyAttribute")
 					}
 					attributesStarted = true
-					reference, parseErr := parseAttributeGroupReference(value, namespaces)
+					reference, parseErr := p.parseAttributeGroupReference(value, namespaces)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
 					}
@@ -1461,14 +1522,19 @@ func parseComplexType(
 						complexType.AttributeGroupRefs,
 						reference,
 					)
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return ComplexType{}, parseErr
+					}
+					// The structured reference retains a second QName occurrence even
+					// though its strings share backing storage with the legacy slice.
+					if !p.chargeBytes(len(reference.Namespace)) || !p.chargeBytes(len(reference.Local)) {
+						return ComplexType{}, p.err
 					}
 					complexType.AttributeGroupReferences = append(
 						complexType.AttributeGroupReferences,
 						AttributeGroupReference{
-							ID: attributeValue(value, "id"), Ref: reference, Annotation: annotation,
+							ID: p.retain(attributeValue(value, "id")), Ref: reference, Annotation: annotation,
 						},
 					)
 				default:
@@ -1479,7 +1545,7 @@ func parseComplexType(
 						if complexType.Derivation != "" || complexType.Content != nil {
 							return ComplexType{}, fmt.Errorf("xsd: complex type has multiple content models")
 						}
-						group, parseErr := parseModelGroup(decoder, value, compositor, namespaces)
+						group, parseErr := p.parseModelGroup(decoder, value, compositor, namespaces)
 						if parseErr != nil {
 							return ComplexType{}, parseErr
 						}
@@ -1502,7 +1568,7 @@ func parseComplexType(
 	}
 }
 
-func parseContentDerivation(
+func (p *schemaParser) parseContentDerivation(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	complexType *ComplexType,
@@ -1515,8 +1581,8 @@ func parseContentDerivation(
 	if err := validateSchemaAttributes(start, allowed...); err != nil {
 		return err
 	}
-	complexType.ContentID = attributeValue(start, "id")
-	namespaces = namespaceScope(namespaces, start)
+	complexType.ContentID = p.retain(attributeValue(start, "id"))
+	namespaces = p.namespaceScope(namespaces, start)
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
@@ -1531,7 +1597,7 @@ func parseContentDerivation(
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return err
 		}
@@ -1540,7 +1606,7 @@ func parseContentDerivation(
 			return ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				annotation, parseErr := parseAnnotation(decoder, value)
+				annotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return parseErr
 				}
@@ -1551,13 +1617,13 @@ func parseContentDerivation(
 					if complexType.Derivation != "" {
 						return fmt.Errorf("xsd: content has multiple derivations")
 					}
-					childNamespaces := namespaceScope(namespaces, value)
+					childNamespaces := p.namespaceScope(namespaces, value)
 					complexType.Derivation = Derivation(value.Name.Local)
 					for _, attribute := range value.Attr {
 						if attribute.Name.Space == "" {
 							switch attribute.Name.Local {
 							case "base":
-								base, parseErr := parseQName(attribute.Value, childNamespaces)
+								base, parseErr := p.parseQName(attribute.Value, childNamespaces)
 								if parseErr != nil {
 									return parseErr
 								}
@@ -1565,7 +1631,7 @@ func parseContentDerivation(
 							}
 						}
 					}
-					if err := parseDerivationBody(decoder, value, complexType, childNamespaces); err != nil {
+					if err := p.parseDerivationBody(decoder, value, complexType, childNamespaces); err != nil {
 						return err
 					}
 				default:
@@ -1582,7 +1648,7 @@ func parseContentDerivation(
 	}
 }
 
-func parseDerivationBody(
+func (p *schemaParser) parseDerivationBody(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	complexType *ComplexType,
@@ -1591,12 +1657,12 @@ func parseDerivationBody(
 	if err := validateSchemaAttributes(start, "base", "id"); err != nil {
 		return err
 	}
-	complexType.DerivationID = attributeValue(start, "id")
-	namespaces = namespaceScope(namespaces, start)
+	complexType.DerivationID = p.retain(attributeValue(start, "id"))
+	namespaces = p.namespaceScope(namespaces, start)
 	attributesStarted := false
 	facetsStarted := false
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return err
 		}
@@ -1614,7 +1680,7 @@ func parseDerivationBody(
 					if facetsStarted || attributesStarted || complexType.AttributeWildcard != nil {
 						return fmt.Errorf("xsd: restriction type must precede facets and attributes")
 					}
-					typeDefinition, parseErr := parseSimpleType(
+					typeDefinition, parseErr := p.parseSimpleType(
 						decoder,
 						value,
 						namespaces,
@@ -1628,7 +1694,7 @@ func parseDerivationBody(
 						return fmt.Errorf("xsd: restriction facets must precede attributes")
 					}
 					facetsStarted = true
-					facet, parseErr := parseFacet(decoder, value, namespaces)
+					facet, parseErr := p.parseFacet(decoder, value, namespaces)
 					if parseErr != nil {
 						return parseErr
 					}
@@ -1636,7 +1702,7 @@ func parseDerivationBody(
 				} else {
 					switch value.Name.Local {
 					case "annotation":
-						annotation, parseErr := parseAnnotation(decoder, value)
+						annotation, parseErr := p.parseAnnotation(decoder, value)
 						if parseErr != nil {
 							return parseErr
 						}
@@ -1648,11 +1714,11 @@ func parseDerivationBody(
 						if complexType.Content != nil {
 							return fmt.Errorf("xsd: derivation has multiple content models")
 						}
-						particle, parseErr := parseGroupReferenceParticle(value, namespaces)
+						particle, parseErr := p.parseGroupReferenceParticle(value, namespaces)
 						if parseErr != nil {
 							return parseErr
 						}
-						annotation, parseErr := parseAnnotationChildren(decoder, value)
+						annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 						if parseErr != nil {
 							return parseErr
 						}
@@ -1665,11 +1731,11 @@ func parseDerivationBody(
 						if complexType.AttributeWildcard != nil {
 							return fmt.Errorf("xsd: derivation has multiple attribute wildcards")
 						}
-						wildcard, parseErr := parseWildcard(value)
+						wildcard, parseErr := p.parseWildcard(value)
 						if parseErr != nil {
 							return parseErr
 						}
-						annotation, parseErr := parseAnnotationChildren(decoder, value)
+						annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 						if parseErr != nil {
 							return parseErr
 						}
@@ -1680,12 +1746,12 @@ func parseDerivationBody(
 							return fmt.Errorf("xsd: attribute must precede anyAttribute")
 						}
 						attributesStarted = true
-						attribute, parseErr := parseAttributeUse(value, namespaces)
+						attribute, parseErr := p.parseAttributeUse(value, namespaces)
 						if parseErr != nil {
 							return parseErr
 						}
 						complexType.Attributes = append(complexType.Attributes, attribute)
-						inline, annotations, err := parseAttributeBody(decoder, value, namespaces)
+						inline, annotations, err := p.parseAttributeBody(decoder, value, namespaces)
 						if err != nil {
 							return err
 						}
@@ -1696,7 +1762,7 @@ func parseDerivationBody(
 							return fmt.Errorf("xsd: attributeGroup must precede anyAttribute")
 						}
 						attributesStarted = true
-						reference, parseErr := parseAttributeGroupReference(value, namespaces)
+						reference, parseErr := p.parseAttributeGroupReference(value, namespaces)
 						if parseErr != nil {
 							return parseErr
 						}
@@ -1704,14 +1770,17 @@ func parseDerivationBody(
 							complexType.AttributeGroupRefs,
 							reference,
 						)
-						annotation, parseErr := parseAnnotationChildren(decoder, value)
+						annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 						if parseErr != nil {
 							return parseErr
+						}
+						if !p.chargeBytes(len(reference.Namespace)) || !p.chargeBytes(len(reference.Local)) {
+							return p.err
 						}
 						complexType.AttributeGroupReferences = append(
 							complexType.AttributeGroupReferences,
 							AttributeGroupReference{
-								ID: attributeValue(value, "id"), Ref: reference, Annotation: annotation,
+								ID: p.retain(attributeValue(value, "id")), Ref: reference, Annotation: annotation,
 							},
 						)
 					default:
@@ -1722,7 +1791,7 @@ func parseDerivationBody(
 							if complexType.Content != nil {
 								return fmt.Errorf("xsd: derivation has multiple content models")
 							}
-							group, parseErr := parseModelGroup(decoder, value, compositor, namespaces)
+							group, parseErr := p.parseModelGroup(decoder, value, compositor, namespaces)
 							if parseErr != nil {
 								return parseErr
 							}
@@ -1759,7 +1828,7 @@ func parseCompositor(local string) (Compositor, bool) {
 	}
 }
 
-func parseModelGroup(
+func (p *schemaParser) parseModelGroup(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	compositor Compositor,
@@ -1768,10 +1837,10 @@ func parseModelGroup(
 	if err := validateSchemaAttributes(start, "id", "maxOccurs", "minOccurs"); err != nil {
 		return ModelGroup{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
-	group := ModelGroup{ID: attributeValue(start, "id"), Compositor: compositor}
+	namespaces = p.namespaceScope(namespaces, start)
+	group := ModelGroup{ID: p.retain(attributeValue(start, "id")), Compositor: compositor}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return ModelGroup{}, err
 		}
@@ -1780,13 +1849,13 @@ func parseModelGroup(
 			return ModelGroup{}, ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return ModelGroup{}, parseErr
 				}
 				group.Annotation = &parsedAnnotation
 			} else if value.Name == (xml.Name{Space: Namespace, Local: "element"}) {
-				element, parseErr := parseElement(value, namespaces)
+				element, parseErr := p.parseElement(value, namespaces)
 				if parseErr != nil {
 					return ModelGroup{}, parseErr
 				}
@@ -1796,7 +1865,7 @@ func parseModelGroup(
 				}
 				particle.Element = &element
 				group.Particles = append(group.Particles, particle)
-				if err := parseElementBody(
+				if err := p.parseElementBody(
 					decoder,
 					value,
 					group.Particles[len(group.Particles)-1].Element,
@@ -1811,11 +1880,11 @@ func parseModelGroup(
 					if parseErr != nil {
 						return ModelGroup{}, parseErr
 					}
-					wildcard, parseErr := parseWildcard(value)
+					wildcard, parseErr := p.parseWildcard(value)
 					if parseErr != nil {
 						return ModelGroup{}, parseErr
 					}
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return ModelGroup{}, parseErr
 					}
@@ -1823,11 +1892,11 @@ func parseModelGroup(
 					particle.Wildcard = &wildcard
 					group.Particles = append(group.Particles, particle)
 				case "group":
-					particle, parseErr := parseGroupReferenceParticle(value, namespaces)
+					particle, parseErr := p.parseGroupReferenceParticle(value, namespaces)
 					if parseErr != nil {
 						return ModelGroup{}, parseErr
 					}
-					annotation, parseErr := parseAnnotationChildren(decoder, value)
+					annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 					if parseErr != nil {
 						return ModelGroup{}, parseErr
 					}
@@ -1839,7 +1908,7 @@ func parseModelGroup(
 						if parseErr != nil {
 							return ModelGroup{}, parseErr
 						}
-						child, parseErr := parseModelGroup(decoder, value, childCompositor, namespaces)
+						child, parseErr := p.parseModelGroup(decoder, value, childCompositor, namespaces)
 						if parseErr != nil {
 							return ModelGroup{}, parseErr
 						}
@@ -1872,24 +1941,24 @@ func setModelGroupOccurrence(group *ModelGroup, start xml.StartElement) error {
 	return nil
 }
 
-func parseGroupReferenceParticle(
+func (p *schemaParser) parseGroupReferenceParticle(
 	start xml.StartElement,
 	namespaces map[string]string,
 ) (Particle, error) {
 	if err := validateSchemaAttributes(start, "id", "maxOccurs", "minOccurs", "ref"); err != nil {
 		return Particle{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	particle, err := parseOccurrence(start)
 	if err != nil {
 		return Particle{}, err
 	}
-	particle.ID = attributeValue(start, "id")
+	particle.ID = p.retain(attributeValue(start, "id"))
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "ref":
-				reference, parseErr := parseQName(attribute.Value, namespaces)
+				reference, parseErr := p.parseQName(attribute.Value, namespaces)
 				if parseErr != nil {
 					return Particle{}, parseErr
 				}
@@ -1903,7 +1972,7 @@ func parseGroupReferenceParticle(
 	return particle, nil
 }
 
-func parseModelGroupDefinition(
+func (p *schemaParser) parseModelGroupDefinition(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
@@ -1911,18 +1980,18 @@ func parseModelGroupDefinition(
 	if err := validateSchemaAttributes(start, "id", "name"); err != nil {
 		return ModelGroupDefinition{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
-	definition := ModelGroupDefinition{ID: attributeValue(start, "id")}
+	namespaces = p.namespaceScope(namespaces, start)
+	definition := ModelGroupDefinition{ID: p.retain(attributeValue(start, "id"))}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "name":
-				definition.Name = attribute.Value
+				definition.Name = p.retain(attribute.Value)
 			}
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return ModelGroupDefinition{}, err
 		}
@@ -1932,7 +2001,7 @@ func parseModelGroupDefinition(
 		case xml.StartElement:
 			if value.Name.Space == Namespace {
 				if value.Name.Local == "annotation" {
-					annotation, parseErr := parseAnnotation(decoder, value)
+					annotation, parseErr := p.parseAnnotation(decoder, value)
 					if parseErr != nil {
 						return ModelGroupDefinition{}, parseErr
 					}
@@ -1943,7 +2012,7 @@ func parseModelGroupDefinition(
 							"xsd: model group definition has multiple compositors",
 						)
 					}
-					group, parseErr := parseModelGroup(decoder, value, compositor, namespaces)
+					group, parseErr := p.parseModelGroup(decoder, value, compositor, namespaces)
 					if parseErr != nil {
 						return ModelGroupDefinition{}, parseErr
 					}
@@ -1962,7 +2031,7 @@ func parseModelGroupDefinition(
 	}
 }
 
-func parseAttributeGroupDefinition(
+func (p *schemaParser) parseAttributeGroupDefinition(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 	namespaces map[string]string,
@@ -1970,18 +2039,18 @@ func parseAttributeGroupDefinition(
 	if err := validateSchemaAttributes(start, "id", "name"); err != nil {
 		return AttributeGroup{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
-	definition := AttributeGroup{ID: attributeValue(start, "id")}
+	namespaces = p.namespaceScope(namespaces, start)
+	definition := AttributeGroup{ID: p.retain(attributeValue(start, "id"))}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "name":
-				definition.Name = attribute.Value
+				definition.Name = p.retain(attribute.Value)
 			}
 		}
 	}
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return AttributeGroup{}, err
 		}
@@ -1991,7 +2060,7 @@ func parseAttributeGroupDefinition(
 		case xml.StartElement:
 			switch value.Name {
 			case xml.Name{Space: Namespace, Local: "annotation"}:
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
 				}
@@ -2002,11 +2071,11 @@ func parseAttributeGroupDefinition(
 						"xsd: attribute group has multiple attribute wildcards",
 					)
 				}
-				wildcard, parseErr := parseWildcard(value)
+				wildcard, parseErr := p.parseWildcard(value)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
 				}
-				annotation, parseErr := parseAnnotationChildren(decoder, value)
+				annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
 				}
@@ -2016,12 +2085,12 @@ func parseAttributeGroupDefinition(
 				if definition.Wildcard != nil {
 					return AttributeGroup{}, fmt.Errorf("xsd: attribute must precede anyAttribute")
 				}
-				attribute, parseErr := parseAttributeUse(value, namespaces)
+				attribute, parseErr := p.parseAttributeUse(value, namespaces)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
 				}
 				definition.Attributes = append(definition.Attributes, attribute)
-				inline, annotations, err := parseAttributeBody(decoder, value, namespaces)
+				inline, annotations, err := p.parseAttributeBody(decoder, value, namespaces)
 				if err != nil {
 					return AttributeGroup{}, err
 				}
@@ -2031,19 +2100,22 @@ func parseAttributeGroupDefinition(
 				if definition.Wildcard != nil {
 					return AttributeGroup{}, fmt.Errorf("xsd: attributeGroup must precede anyAttribute")
 				}
-				reference, parseErr := parseAttributeGroupReference(value, namespaces)
+				reference, parseErr := p.parseAttributeGroupReference(value, namespaces)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
 				}
 				definition.References = append(definition.References, reference)
-				annotation, parseErr := parseAnnotationChildren(decoder, value)
+				annotation, parseErr := p.parseAnnotationChildren(decoder, value)
 				if parseErr != nil {
 					return AttributeGroup{}, parseErr
+				}
+				if !p.chargeBytes(len(reference.Namespace)) || !p.chargeBytes(len(reference.Local)) {
+					return AttributeGroup{}, p.err
 				}
 				definition.AttributeGroupReferences = append(
 					definition.AttributeGroupReferences,
 					AttributeGroupReference{
-						ID: attributeValue(value, "id"), Ref: reference, Annotation: annotation,
+						ID: p.retain(attributeValue(value, "id")), Ref: reference, Annotation: annotation,
 					},
 				)
 			default:
@@ -2057,7 +2129,7 @@ func parseAttributeGroupDefinition(
 	}
 }
 
-func parseWildcard(start xml.StartElement) (Wildcard, error) {
+func (p *schemaParser) parseWildcard(start xml.StartElement) (Wildcard, error) {
 	if err := validateSchemaAttributes(
 		start,
 		"id",
@@ -2069,7 +2141,7 @@ func parseWildcard(start xml.StartElement) (Wildcard, error) {
 		return Wildcard{}, err
 	}
 	wildcard := Wildcard{
-		ID:              attributeValue(start, "id"),
+		ID:              p.retain(attributeValue(start, "id")),
 		Namespaces:      []string{"##any"},
 		ProcessContents: ProcessStrict,
 	}
@@ -2077,12 +2149,15 @@ func parseWildcard(start xml.StartElement) (Wildcard, error) {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "namespace":
+				if !p.chargeBytes(len(attribute.Value)) {
+					return Wildcard{}, p.err
+				}
 				wildcard.Namespaces = strings.Fields(attribute.Value)
 				if len(wildcard.Namespaces) == 0 {
 					return Wildcard{}, fmt.Errorf("xsd: wildcard namespace is empty")
 				}
 			case "processContents":
-				wildcard.ProcessContents = ProcessContents(attribute.Value)
+				wildcard.ProcessContents = ProcessContents(p.retain(attribute.Value))
 				if wildcard.ProcessContents != ProcessStrict &&
 					wildcard.ProcessContents != ProcessLax &&
 					wildcard.ProcessContents != ProcessSkip {
@@ -2097,19 +2172,19 @@ func parseWildcard(start xml.StartElement) (Wildcard, error) {
 	return wildcard, nil
 }
 
-func parseAttributeGroupReference(
+func (p *schemaParser) parseAttributeGroupReference(
 	start xml.StartElement,
 	namespaces map[string]string,
 ) (QName, error) {
 	if err := validateSchemaAttributes(start, "id", "ref"); err != nil {
 		return QName{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
+	namespaces = p.namespaceScope(namespaces, start)
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "ref":
-				return parseQName(attribute.Value, namespaces)
+				return p.parseQName(attribute.Value, namespaces)
 			}
 		}
 	}
@@ -2151,7 +2226,7 @@ func parseOccurrence(start xml.StartElement) (Particle, error) {
 	return particle, nil
 }
 
-func parseAttributeUse(
+func (p *schemaParser) parseAttributeUse(
 	start xml.StartElement,
 	namespaces map[string]string,
 ) (AttributeUse, error) {
@@ -2168,53 +2243,53 @@ func parseAttributeUse(
 	); err != nil {
 		return AttributeUse{}, err
 	}
-	namespaces = namespaceScope(namespaces, start)
-	use := AttributeUse{ID: attributeValue(start, "id"), Use: AttributeOptional}
+	namespaces = p.namespaceScope(namespaces, start)
+	use := AttributeUse{ID: p.retain(attributeValue(start, "id")), Use: AttributeOptional}
 	for _, attribute := range start.Attr {
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "name":
-				use.Name = attribute.Value
+				use.Name = p.retain(attribute.Value)
 			case "ref":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return AttributeUse{}, err
 				}
 				use.Ref = name
 			case "type":
-				name, err := parseQName(attribute.Value, namespaces)
+				name, err := p.parseQName(attribute.Value, namespaces)
 				if err != nil {
 					return AttributeUse{}, err
 				}
 				use.Type = name
 			case "form":
-				form, err := parseForm(attribute.Value)
+				form, err := parseForm(p.retain(attribute.Value))
 				if err != nil {
 					return AttributeUse{}, err
 				}
 				use.Form = form
 			case "use":
-				use.Use = AttributeUseKind(attribute.Value)
+				use.Use = AttributeUseKind(p.retain(attribute.Value))
 				if use.Use != AttributeOptional && use.Use != AttributeRequired &&
 					use.Use != AttributeProhibited {
 					return AttributeUse{}, fmt.Errorf("xsd: invalid attribute use %q", attribute.Value)
 				}
 			case "default":
-				use.Default = attribute.Value
+				use.Default = p.retain(attribute.Value)
 				use.DefaultSet = true
 			case "fixed":
-				use.Fixed = attribute.Value
+				use.Fixed = p.retain(attribute.Value)
 				use.FixedSet = true
 			}
 		}
 	}
 	if use.DefaultSet || use.FixedSet {
-		use.ValueNamespaces = cloneNamespaces(namespaces)
+		use.ValueNamespaces = p.cloneNamespaces(namespaces)
 	}
 	return use, nil
 }
 
-func parseQName(value string, namespaces map[string]string) (QName, error) {
+func (p *schemaParser) parseQName(value string, namespaces map[string]string) (QName, error) {
 	if value == "" || strings.TrimSpace(value) != value {
 		return QName{}, fmt.Errorf("xsd: invalid QName %q", value)
 	}
@@ -2231,7 +2306,7 @@ func parseQName(value string, namespaces map[string]string) (QName, error) {
 	if prefix != "" && !ok {
 		return QName{}, fmt.Errorf("xsd: undeclared QName prefix %q", prefix)
 	}
-	return QName{Namespace: namespace, Local: local}, nil
+	return QName{Namespace: p.retain(namespace), Local: p.retain(local)}, p.err
 }
 
 func parseBoolean(value string) (bool, error) {
@@ -2258,7 +2333,7 @@ func referenceKind(local string) (ReferenceKind, bool) {
 	}
 }
 
-func parseSchemaReference(
+func (p *schemaParser) parseSchemaReference(
 	kind ReferenceKind,
 	documentBase string,
 	start xml.StartElement,
@@ -2266,21 +2341,21 @@ func parseSchemaReference(
 	if err := validateSchemaAttributes(start, "id", "namespace", "schemaLocation"); err != nil {
 		return SchemaReference{}, err
 	}
-	reference := SchemaReference{ID: attributeValue(start, "id"), Kind: kind}
+	reference := SchemaReference{ID: p.retain(attributeValue(start, "id")), Kind: kind}
 	baseURI := documentBase
 	for _, attribute := range start.Attr {
 		switch attribute.Name.Space {
 		case "":
 			switch attribute.Name.Local {
 			case "namespace":
-				reference.Namespace = attribute.Value
+				reference.Namespace = p.retain(attribute.Value)
 			case "schemaLocation":
-				reference.Location = attribute.Value
+				reference.Location = p.retain(attribute.Value)
 			}
 		case "http://www.w3.org/XML/1998/namespace":
 			switch attribute.Name.Local {
 			case "base":
-				resolved, err := resolveURI(documentBase, attribute.Value)
+				resolved, err := p.resolveURI(documentBase, attribute.Value)
 				if err != nil {
 					return SchemaReference{}, err
 				}
@@ -2296,7 +2371,7 @@ func parseSchemaReference(
 	}
 
 	if reference.Location != "" {
-		resolved, err := resolveURI(baseURI, reference.Location)
+		resolved, err := p.resolveURI(baseURI, reference.Location)
 		if err != nil {
 			return SchemaReference{}, err
 		}
@@ -2306,29 +2381,32 @@ func parseSchemaReference(
 	return reference, nil
 }
 
-func resolveURI(base, reference string) (string, error) {
+func (p *schemaParser) resolveURI(base, reference string) (string, error) {
+	if !p.admitURIWork(base, reference) {
+		return "", p.err
+	}
 	referenceURI, err := url.Parse(reference)
 	if err != nil {
 		return "", fmt.Errorf("xsd: invalid URI reference %q: %w", reference, err)
 	}
 	if base == "" {
-		return referenceURI.String(), nil
+		return p.retain(referenceURI.String()), p.err
 	}
 	baseURI, err := url.Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("xsd: invalid base URI %q: %w", base, err)
 	}
 
-	return baseURI.ResolveReference(referenceURI).String(), nil
+	return p.retain(baseURI.ResolveReference(referenceURI).String()), p.err
 }
 
-func parseAnnotationChildren(
+func (p *schemaParser) parseAnnotationChildren(
 	decoder *xml.Decoder,
 	start xml.StartElement,
 ) (*Annotation, error) {
 	var annotation *Annotation
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return nil, err
 		}
@@ -2337,7 +2415,7 @@ func parseAnnotationChildren(
 			return nil, ErrDTDForbidden
 		case xml.StartElement:
 			if value.Name == (xml.Name{Space: Namespace, Local: "annotation"}) {
-				parsedAnnotation, parseErr := parseAnnotation(decoder, value)
+				parsedAnnotation, parseErr := p.parseAnnotation(decoder, value)
 				if parseErr != nil {
 					return nil, parseErr
 				}
@@ -2353,7 +2431,7 @@ func parseAnnotationChildren(
 	}
 }
 
-func parseAnnotation(decoder *xml.Decoder, start xml.StartElement) (Annotation, error) {
+func (p *schemaParser) parseAnnotation(decoder *xml.Decoder, start xml.StartElement) (Annotation, error) {
 	if err := validateSchemaAttributes(start, "id"); err != nil {
 		return Annotation{}, err
 	}
@@ -2362,13 +2440,13 @@ func parseAnnotation(decoder *xml.Decoder, start xml.StartElement) (Annotation, 
 		if attribute.Name.Space == "" {
 			switch attribute.Name.Local {
 			case "id":
-				annotation.ID = attribute.Value
+				annotation.ID = p.retain(attribute.Value)
 			}
 		}
 	}
 
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			return Annotation{}, err
 		}
@@ -2378,13 +2456,13 @@ func parseAnnotation(decoder *xml.Decoder, start xml.StartElement) (Annotation, 
 		case xml.StartElement:
 			switch value.Name {
 			case xml.Name{Space: Namespace, Local: "documentation"}:
-				documentation, decodeErr := decodeDocumentation(decoder, value)
+				documentation, decodeErr := p.decodeDocumentation(decoder, value)
 				if decodeErr != nil {
 					return Annotation{}, decodeErr
 				}
 				annotation.Documentation = append(annotation.Documentation, documentation)
 			case xml.Name{Space: Namespace, Local: "appinfo"}:
-				appInfo, decodeErr := decodeAppInfo(decoder, value)
+				appInfo, decodeErr := p.decodeAppInfo(decoder, value)
 				if decodeErr != nil {
 					return Annotation{}, decodeErr
 				}
@@ -2400,14 +2478,24 @@ func parseAnnotation(decoder *xml.Decoder, start xml.StartElement) (Annotation, 
 	}
 }
 
-func decodeAppInfo(decoder *xml.Decoder, start xml.StartElement) (AppInfo, error) {
+func (p *schemaParser) decodeAppInfo(decoder *xml.Decoder, start xml.StartElement) (AppInfo, error) {
 	if err := validateSchemaAttributes(start, "id", "source"); err != nil {
 		return AppInfo{}, err
+	}
+	for _, attribute := range start.Attr {
+		if attribute.Name.Space == "" && (attribute.Name.Local == "id" || attribute.Name.Local == "source") {
+			if !p.chargeBytes(len(attribute.Value)) {
+				return AppInfo{}, p.err
+			}
+		}
 	}
 	var content struct {
 		ID     string `xml:"id,attr"`
 		Source string `xml:"source,attr"`
 		Inner  string `xml:",innerxml"`
+	}
+	if err := p.admitAnnotationCapture(decoder); err != nil {
+		return AppInfo{}, err
 	}
 	if err := decoder.DecodeElement(&content, &start); err != nil {
 		return AppInfo{}, err
@@ -2415,7 +2503,7 @@ func decodeAppInfo(decoder *xml.Decoder, start xml.StartElement) (AppInfo, error
 	return AppInfo{ID: content.ID, Source: content.Source, Content: content.Inner}, nil
 }
 
-func decodeDocumentation(decoder *xml.Decoder, start xml.StartElement) (Documentation, error) {
+func (p *schemaParser) decodeDocumentation(decoder *xml.Decoder, start xml.StartElement) (Documentation, error) {
 	if err := validateSchemaAttributes(start, "id", "source"); err != nil {
 		return Documentation{}, err
 	}
@@ -2425,14 +2513,14 @@ func decodeDocumentation(decoder *xml.Decoder, start xml.StartElement) (Document
 		case "":
 			switch attribute.Name.Local {
 			case "id":
-				documentation.ID = attribute.Value
+				documentation.ID = p.retain(attribute.Value)
 			case "source":
-				documentation.Source = attribute.Value
+				documentation.Source = p.retain(attribute.Value)
 			}
 		case "http://www.w3.org/XML/1998/namespace":
 			switch attribute.Name.Local {
 			case "lang":
-				documentation.Language = attribute.Value
+				documentation.Language = p.retain(attribute.Value)
 			}
 		}
 	}
@@ -2440,25 +2528,34 @@ func decodeDocumentation(decoder *xml.Decoder, start xml.StartElement) (Document
 	var content struct {
 		Inner string `xml:",innerxml"`
 	}
+	if err := p.admitAnnotationCapture(decoder); err != nil {
+		return Documentation{}, err
+	}
 	if err := decoder.DecodeElement(&content, &start); err != nil {
 		return Documentation{}, err
 	}
 	documentation.Markup = content.Inner
 	// DecodeElement has already proven that Inner is a well-formed fragment.
-	text, _ := documentationText(content.Inner)
+	text, err := p.documentationText(content.Inner)
+	if err != nil {
+		return Documentation{}, err
+	}
 	documentation.Content = text
 
 	return documentation, nil
 }
 
-func documentationText(markup string) (string, error) {
+func (p *schemaParser) documentationText(markup string) (string, error) {
+	if !p.chargeBytes(len(markup)) {
+		return "", p.err
+	}
 	decoder := xml.NewDecoder(strings.NewReader("<root>" + markup + "</root>"))
 	var content strings.Builder
 	for {
-		token, err := decoder.Token()
+		token, err := p.token(decoder)
 		if err != nil {
 			if err == io.EOF {
-				return strings.TrimSpace(content.String()), nil
+				return p.retain(strings.TrimSpace(content.String())), p.err
 			}
 			return "", err
 		}
@@ -2466,6 +2563,9 @@ func documentationText(markup string) (string, error) {
 		case xml.Directive:
 			return "", ErrDTDForbidden
 		case xml.CharData:
+			if !p.chargeBytes(len(value)) {
+				return "", p.err
+			}
 			content.Write(value)
 		}
 	}

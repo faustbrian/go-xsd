@@ -1,5 +1,21 @@
 # Security and limits
 
+Schema parsing independently admits cumulative owned namespace entries
+(1,000,000 by default) and retained model-string/copy-work bytes (64 MiB by
+default). Namespace map copies and declarations, including rebindings, are
+charged before capacity/copy/insertion; an unchanged aliased scope costs no new
+entries. String occurrences include expanded QName components, namespace
+prefixes/URIs, identifiers, values, SystemID/base/reference fields, raw annotation
+markup and derived text even where backing strings are shared. URI building
+admits a conservative three-byte escape envelope per input byte before work;
+documentation charges the markup wrapper copy, each text-builder write and
+retained trimmed text. The existing XML placement pass records raw annotation
+spans so capture is admitted before `DecodeElement`, not after constructing a
+completed model. These are conservative owned-work allowances, not exact heap
+measurements or pre-decoder token allocation controls. Compiler parser allowances
+apply independently to each root/loaded document, not to the whole graph.
+See [API guide](api.md) for selectors and [migration](migration.md) for adoption.
+
 Memory and Catalog constructors preflight finite resource/mapping count and
 cumulative caller-input bytes before owned map allocation, URI parsing and
 content copying. Memory additionally caps each resource's content. Counted bytes

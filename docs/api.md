@@ -18,6 +18,15 @@ configured resolver and returns an immutable set. Validation results own their
 diagnostics. Callers retain ownership of contexts, source bytes, readers, and
 injected resolver resources.
 
+`ParseOptions.MaxNamespaceEntries` and `MaxModelBytes` independently bound
+per-document namespace copies/declarations and retained string/copy work. Zero
+selects finite defaults of 1,000,000 entries and 64 MiB; negatives are invalid.
+Limit refusal returns no document and preserves `xsd.ErrLimitExceeded` through
+trusted unwrapping. Existing source-byte, depth and element policies remain
+independent. Compiler callers select the same per-document allowances through
+`compile.Limits.MaxParseNamespaceEntries` and `MaxParseModelBytes` for both root
+and loaded schemas. These are not graph-total budgets or exact heap accounting.
+
 Use the [compiler-checked package example](../example_test.go) for the smallest
 complete parse, compile, and validation flow. The [architecture guide](architecture.md)
 describes compilation in more detail, and the [security guide](security.md)

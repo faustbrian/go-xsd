@@ -7,6 +7,13 @@ compatibility.
 
 ### Changed (next major)
 
+- Bound schema-parser namespace copies/declarations and retained string/copy
+  work independently of serialized input. Add finite zero-default allowances
+  through `ParseOptions` and per-document compiler limits; annotation capture
+  and derived text are admitted at their allocation owners. Existing namespace,
+  QName and annotation semantics remain unchanged within the allowances.
+  This tightens acceptance for the next major; no release is implied.
+
 - Admit Memory and Catalog constructor inputs against finite count and cumulative
   string/content-byte limits before owned allocations and URI processing.
   Memory also caps individual resource content. Add `MemoryOptions`,

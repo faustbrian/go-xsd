@@ -53,6 +53,11 @@ type Limits struct {
 	// synthesized per Compile call, including temporary and redefined content.
 	// Zero selects 1,000,000 independently of MaxParticles (the final count).
 	MaxParticleCopies int
+	// MaxParseNamespaceEntries and MaxParseModelBytes independently bound owned
+	// parsing work per document, not cumulatively across the schema graph.
+	// Zero selects parser defaults (1,000,000 entries and 64 MiB).
+	MaxParseNamespaceEntries int
+	MaxParseModelBytes       int64
 }
 
 // Options configures a Compiler. A nil Resolver denies every external load.
@@ -108,6 +113,9 @@ func New(options Options) (*Compiler, error) {
 }
 
 func validateLimits(limits Limits) error {
+	if limits.MaxParseNamespaceEntries < 0 || limits.MaxParseModelBytes < 0 {
+		return fmt.Errorf("xsd compile: limits must not be negative")
+	}
 	if limits.MaxSchemas < 0 {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
@@ -705,8 +713,10 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err erro
 		}
 	}()
 	document, err := xsd.Parse(ctx, root.Content, xsd.ParseOptions{
-		SystemID:         root.URI,
-		MaxDocumentBytes: c.limits.MaxBytes,
+		SystemID:            root.URI,
+		MaxDocumentBytes:    c.limits.MaxBytes,
+		MaxNamespaceEntries: c.limits.MaxParseNamespaceEntries,
+		MaxModelBytes:       c.limits.MaxParseModelBytes,
 	})
 	if err != nil {
 		return nil, err
@@ -4794,8 +4804,10 @@ func (s *compileState) load(
 	}
 	s.bytes += int64(len(resource.Content))
 	document, err := xsd.Parse(ctx, resource.Content, xsd.ParseOptions{
-		SystemID:         resource.URI,
-		MaxDocumentBytes: s.compiler.limits.MaxBytes,
+		SystemID:            resource.URI,
+		MaxDocumentBytes:    s.compiler.limits.MaxBytes,
+		MaxNamespaceEntries: s.compiler.limits.MaxParseNamespaceEntries,
+		MaxModelBytes:       s.compiler.limits.MaxParseModelBytes,
 	})
 	if err != nil {
 		return nil, "", err
