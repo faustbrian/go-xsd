@@ -447,10 +447,14 @@ func TestValidationPrimitiveDecisionTables(t *testing.T) {
 		t.Fatal("isNamespaceDeclaration(attribute) = true")
 	}
 
-	cloned := cloneNamespaces(namespaces)
+	cloneState := treeCloneState{validator: &Validator{limits: Limits{MaxBytes: defaultMaxBytes, MaxNamespaceEntries: defaultMaxNamespaceEntries}}}
+	cloned, err := cloneState.scope(context.Background(), namespaces)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cloned["t"] = "mutated"
 	if namespaces["t"] != "urn:test" {
-		t.Fatal("cloneNamespaces() retained a map alias")
+		t.Fatal("admitted namespace scope retained a map alias")
 	}
 
 	for _, test := range []struct {

@@ -7,6 +7,13 @@ compatibility.
 
 ### Changed (next major)
 
+- Bound validator-owned string payload with `validate.Limits.MaxBytes` in
+  addition to serialized input, and bound cumulative namespace scope copies and
+  declaration insertions with independent `MaxNamespaceEntries` (zero selects
+  1,000,000). Tree clone admission checks known attribute and direct-child counts
+  before allocating capacity. This tightens acceptance for the next major;
+  callers may adjust these policies independently. No release is implied.
+
 - Make `ParseError` default text, pointer/value formatting, JSON and logging
   expose only `xsd: parse failed`, without evaluating supplied cause callbacks.
   This intentionally breaks verbose error formatting for the next major;

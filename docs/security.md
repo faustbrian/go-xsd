@@ -1,5 +1,13 @@
 # Security and limits
 
+Instance ingestion bounds cumulative owned string payload and namespace scope
+copy/declaration work independently of serialized input, text, nodes and
+ordinary attributes. Tree clone cardinalities are admitted before owned map and
+child-capacity allocation. These policies do not bound allocations performed by
+the standard XML decoder before it yields a token; caller readers still own
+their blocking-read cancellation. See [validation](validation.md) for accounting
+and explicit tree namespace-scope semantics.
+
 The parser and instance validator forbid DTD directives and do not expand
 external entities. Parsing performs no implicit I/O. Compilation denies file
 and remote resolution unless the caller injects a resolver.

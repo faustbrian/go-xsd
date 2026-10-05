@@ -139,26 +139,29 @@ var ErrLimitExceeded = errors.New("xsd validate: resource limit exceeded")
 const schemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance"
 
 const (
-	defaultMaxBytes          = 64 << 20
-	defaultMaxDepth          = 256
-	defaultMaxTextBytes      = 16 << 20
-	defaultMaxDiagnostics    = 1000
-	defaultMaxNodes          = 1000000
-	defaultMaxAttributes     = 1000000
-	defaultMaxXPathSteps     = 1000000
-	defaultMaxIdentityValues = 1000000
+	defaultMaxBytes            = 64 << 20
+	defaultMaxDepth            = 256
+	defaultMaxTextBytes        = 16 << 20
+	defaultMaxDiagnostics      = 1000
+	defaultMaxNodes            = 1000000
+	defaultMaxAttributes       = 1000000
+	defaultMaxNamespaceEntries = 1000000
+	defaultMaxXPathSteps       = 1000000
+	defaultMaxIdentityValues   = 1000000
 )
 
 // Limits bounds work retained while validating one instance.
 type Limits struct {
-	MaxBytes          int64
-	MaxDepth          int
-	MaxTextBytes      int
-	MaxDiagnostics    int
-	MaxNodes          int
-	MaxAttributes     int
-	MaxXPathSteps     int
-	MaxIdentityValues int
+	MaxBytes       int64
+	MaxDepth       int
+	MaxTextBytes   int
+	MaxDiagnostics int
+	MaxNodes       int
+	MaxAttributes  int
+	// MaxNamespaceEntries bounds cumulative scope copies and declarations.
+	MaxNamespaceEntries int
+	MaxXPathSteps       int
+	MaxIdentityValues   int
 }
 
 // Options configures a Validator.
@@ -204,6 +207,9 @@ func New(set *compile.Set, options Options) (*Validator, error) {
 	if limits.MaxAttributes == 0 {
 		limits.MaxAttributes = defaultMaxAttributes
 	}
+	if limits.MaxNamespaceEntries == 0 {
+		limits.MaxNamespaceEntries = defaultMaxNamespaceEntries
+	}
 	if limits.MaxXPathSteps == 0 {
 		limits.MaxXPathSteps = defaultMaxXPathSteps
 	}
@@ -212,7 +218,7 @@ func New(set *compile.Set, options Options) (*Validator, error) {
 	}
 	if isNegative(limits.MaxBytes) || isNegative(limits.MaxDepth) ||
 		isNegative(limits.MaxTextBytes) || isNegative(limits.MaxDiagnostics) ||
-		isNegative(limits.MaxNodes) || isNegative(limits.MaxAttributes) ||
+		isNegative(limits.MaxNodes) || isNegative(limits.MaxAttributes) || isNegative(limits.MaxNamespaceEntries) ||
 		isNegative(limits.MaxXPathSteps) || isNegative(limits.MaxIdentityValues) {
 		return nil, fmt.Errorf("xsd validate: limits must not be negative")
 	}
@@ -234,6 +240,9 @@ func (v *Validator) Validate(ctx context.Context, source []byte) (Result, error)
 // Cancellation is checked between parsing and validation steps. It cannot
 // interrupt a blocked Read; the caller's reader must cooperate with cancellation.
 func (v *Validator) ValidateReader(ctx context.Context, reader io.Reader) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	if reader == nil {
 		return Result{}, errors.New("xsd validate: instance reader is nil")
 	}
@@ -315,10 +324,70 @@ func (v *Validator) validateRoot(ctx context.Context, root *instanceNode) (Resul
 }
 
 type treeCloneState struct {
-	validator  *Validator
-	nodes      int
-	attributes int
-	textBytes  int
+	validator        *Validator
+	nodes            int
+	attributes       int
+	textBytes        int
+	ownedBytes       int64
+	namespaceEntries int
+}
+
+func (s *treeCloneState) payload(parts ...string) error {
+	for _, part := range parts {
+		if err := s.payloadBytes(len(part)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *treeCloneState) payloadBytes(count int) error {
+	next, ok := addWithinLimit(s.ownedBytes, int64(count), s.validator.limits.MaxBytes)
+	if !ok {
+		return fmt.Errorf("%w: owned instance bytes exceed %d", ErrLimitExceeded, s.validator.limits.MaxBytes)
+	}
+	s.ownedBytes = next
+	return nil
+}
+
+func (s *treeCloneState) admitAttributes(count int) error {
+	next, ok := addWithinLimit(s.attributes, count, s.validator.limits.MaxAttributes)
+	if !ok {
+		return fmt.Errorf("%w: attribute count exceeds %d", ErrLimitExceeded, s.validator.limits.MaxAttributes)
+	}
+	s.attributes = next
+	return nil
+}
+
+func (s *treeCloneState) namespace(prefix, uri string) error {
+	next, ok := addWithinLimit(s.namespaceEntries, 1, s.validator.limits.MaxNamespaceEntries)
+	if !ok {
+		return fmt.Errorf("%w: namespace entries exceed %d", ErrLimitExceeded, s.validator.limits.MaxNamespaceEntries)
+	}
+	s.namespaceEntries = next
+	return s.payload(prefix, uri)
+}
+
+func (s *treeCloneState) scope(ctx context.Context, source map[string]string) (map[string]string, error) {
+	if _, ok := addWithinLimit(s.namespaceEntries, len(source), s.validator.limits.MaxNamespaceEntries); !ok {
+		return nil, fmt.Errorf("%w: namespace entries exceed %d", ErrLimitExceeded, s.validator.limits.MaxNamespaceEntries)
+	}
+	for prefix, uri := range source {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := s.namespace(prefix, uri); err != nil {
+			return nil, err
+		}
+	}
+	clone := make(map[string]string, len(source))
+	for prefix, uri := range source {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		clone[prefix] = uri
+	}
+	return clone, nil
 }
 
 func (s *treeCloneState) clone(
@@ -345,6 +414,12 @@ func (s *treeCloneState) clone(
 		)
 	}
 	s.nodes = nodes
+	if _, ok := addWithinLimit(s.nodes, len(source.Children), s.validator.limits.MaxNodes); !ok {
+		return nil, fmt.Errorf("%w: node count exceeds %d", ErrLimitExceeded, s.validator.limits.MaxNodes)
+	}
+	if err := s.admitAttributes(len(source.Attributes)); err != nil {
+		return nil, err
+	}
 	if source.Name.Local == "" {
 		return nil, fmt.Errorf("xsd validate: tree node has no local name")
 	}
@@ -357,27 +432,36 @@ func (s *treeCloneState) clone(
 		)
 	}
 	s.textBytes = textBytes
+	if err := s.payload(source.Name.Namespace, source.Name.Local, source.Text, source.Location.SystemID); err != nil {
+		return nil, err
+	}
+	for name, value := range source.Attributes {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := s.payload(name.Namespace, name.Local, value); err != nil {
+			return nil, err
+		}
+		if name.Local == "" {
+			return nil, fmt.Errorf("xsd validate: tree attribute has no local name")
+		}
+	}
+	namespaces, err := s.scope(ctx, source.Namespaces)
+	if err != nil {
+		return nil, err
+	}
 	node := &instanceNode{
 		Name:           source.Name,
 		Attributes:     make(map[xsd.QName]string, len(source.Attributes)),
 		AttributeTypes: make(map[xsd.QName]xsd.QName),
-		Namespaces:     cloneNamespaces(source.Namespaces),
+		Namespaces:     namespaces,
 		Children:       make([]*instanceNode, 0, len(source.Children)),
 		Text:           source.Text,
 		Location:       source.Location,
 	}
 	for name, value := range source.Attributes {
-		attributes, withinLimit := addWithinLimit(s.attributes, 1, s.validator.limits.MaxAttributes)
-		if !withinLimit {
-			return nil, fmt.Errorf(
-				"%w: attribute count exceeds %d",
-				ErrLimitExceeded,
-				s.validator.limits.MaxAttributes,
-			)
-		}
-		s.attributes = attributes
-		if name.Local == "" {
-			return nil, fmt.Errorf("xsd validate: tree attribute has no local name")
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		node.Attributes[name] = value
 	}
@@ -404,6 +488,9 @@ type instanceNode struct {
 }
 
 func (v *Validator) parseInstance(ctx context.Context, source []byte) (*instanceNode, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if exceedsLimit(int64(len(source)), v.limits.MaxBytes) {
 		return nil, fmt.Errorf("%w: instance bytes exceed %d", ErrLimitExceeded, v.limits.MaxBytes)
 	}
@@ -427,7 +514,7 @@ func (v *Validator) parseInstanceReader(ctx context.Context, reader io.Reader) (
 	var stack []*instanceNode
 	textBytes := 0
 	nodes := 0
-	attributes := 0
+	admission := treeCloneState{validator: v}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -469,11 +556,44 @@ func (v *Validator) parseInstanceReader(ctx context.Context, reader io.Reader) (
 			if len(stack) > 0 {
 				parentNamespaces = stack[len(stack)-1].Namespaces
 			}
+			ordinary := 0
+			for _, attribute := range value.Attr {
+				if !isNamespaceDeclaration(attribute.Name) {
+					ordinary++
+				}
+			}
+			if err := admission.admitAttributes(ordinary); err != nil {
+				return nil, err
+			}
+			if err := admission.payload(value.Name.Space, value.Name.Local, v.systemID); err != nil {
+				return nil, err
+			}
+			// Admission precedes our map allocation; decoder token allocation is caller-input parsing work.
+			for _, attribute := range value.Attr {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				if isNamespaceDeclaration(attribute.Name) {
+					prefix := attribute.Name.Local
+					if attribute.Name.Space == "" {
+						prefix = ""
+					}
+					if err := admission.namespace(prefix, attribute.Value); err != nil {
+						return nil, err
+					}
+				} else if err := admission.payload(attribute.Name.Space, attribute.Name.Local, attribute.Value); err != nil {
+					return nil, err
+				}
+			}
+			namespaces, err := admission.scope(ctx, parentNamespaces)
+			if err != nil {
+				return nil, err
+			}
 			node := &instanceNode{
 				Name:           xsd.QName{Namespace: value.Name.Space, Local: value.Name.Local},
 				Attributes:     make(map[xsd.QName]string),
 				AttributeTypes: make(map[xsd.QName]xsd.QName),
-				Namespaces:     cloneNamespaces(parentNamespaces),
+				Namespaces:     namespaces,
 				Location: xsd.Location{
 					SystemID: v.systemID,
 					Line:     line,
@@ -490,15 +610,6 @@ func (v *Validator) parseInstanceReader(ctx context.Context, reader io.Reader) (
 					node.Namespaces[prefix] = attribute.Value
 					continue
 				}
-				nextAttributes, withinLimit := addWithinLimit(attributes, 1, v.limits.MaxAttributes)
-				if !withinLimit {
-					return nil, fmt.Errorf(
-						"%w: attribute count exceeds %d",
-						ErrLimitExceeded,
-						v.limits.MaxAttributes,
-					)
-				}
-				attributes = nextAttributes
 				name := xsd.QName{Namespace: attribute.Name.Space, Local: attribute.Name.Local}
 				if _, duplicate := node.Attributes[name]; duplicate {
 					return nil, parseError(decoder, v.systemID, fmt.Errorf(
@@ -529,18 +640,17 @@ func (v *Validator) parseInstanceReader(ctx context.Context, reader io.Reader) (
 				}
 				textBytes = nextTextBytes
 				current := stack[len(stack)-1]
+				// Charge the new retained text occurrence, including its copied prefix.
+				if err := admission.payload(current.Text); err != nil {
+					return nil, err
+				}
+				if err := admission.payloadBytes(len(value)); err != nil {
+					return nil, err
+				}
 				current.Text = current.Text + string(value)
 			}
 		}
 	}
-}
-
-func cloneNamespaces(source map[string]string) map[string]string {
-	clone := make(map[string]string, len(source))
-	for prefix, namespace := range source {
-		clone[prefix] = namespace
-	}
-	return clone
 }
 
 func validatorElementDefaultSet(element xsd.Element) bool {
