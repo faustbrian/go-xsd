@@ -10,6 +10,12 @@ Include the affected module and version, impact, reproduction, preconditions,
 and any suggested mitigation. Reports are acknowledged as soon as practical;
 timelines depend on severity and verification.
 
+The shared [vulnerability-management procedure](https://github.com/faustbrian/go-library-tools/blob/main/docs/ecosystem/security/vulnerability-management.md)
+defines severity, acknowledgement and remediation targets, private triage,
+embargo, advisory publication and coordinated affected-module releases.
+The maintainer owns repository triage; private case records identify exact
+affected and fixed versions without disclosing reporter data or credentials.
+
 ## Supported Versions
 
 The latest stable `v1` release line receives security fixes. Support windows
@@ -32,3 +38,7 @@ The repository [safety and concurrency policy](AGENTS.md#safety-and-concurrency)
 and [supply-chain policy](AGENTS.md#dependencies-and-supply-chain) define shared
 trust boundaries and release requirements. Package-specific security guidance
 refines those rules for its owned boundary.
+
+The versioned [XSD threat model](docs/security-threat-model-v1.md) records
+concrete boundaries and residual responsibilities. It is not a release verdict
+or evidence that every selected security gate passed.

@@ -1,5 +1,12 @@
 # Security and limits
 
+Memory and Catalog constructors preflight finite resource/mapping count and
+cumulative caller-input bytes before owned map allocation, URI parsing and
+content copying. Memory additionally caps each resource's content. Counted bytes
+include resource URIs and catalog namespace strings, not just schema content.
+See [resolution](resolution.md) for inclusive defaults and additive options.
+These policies do not bound prior caller allocations or exact heap overhead.
+
 For the next major, `compile.Compiler.Compile` failures and built-in resolver
 constructor/Resolve/Close failures use `xsd compile: failed` or
 `xsd resolve: failed` for supported text/formatting, JSON and logging. Default

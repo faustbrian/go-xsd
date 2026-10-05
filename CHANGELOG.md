@@ -7,6 +7,13 @@ compatibility.
 
 ### Changed (next major)
 
+- Admit Memory and Catalog constructor inputs against finite count and cumulative
+  string/content-byte limits before owned allocations and URI processing.
+  Memory also caps individual resource content. Add `MemoryOptions`,
+  `CatalogOptions` and explicitly named `WithOptions` constructors; existing
+  constructors retain their signatures but use finite defaults. This tightens
+  acceptance for the next major; no release is implied.
+
 - Redact public compiler and built-in resolver error output to fixed categories,
   preserving cause inspection and sentinel classification through unwrapping.
   Exact standard cancellation/deadline errors stay unchanged. Failed operations

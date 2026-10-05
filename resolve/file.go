@@ -14,7 +14,8 @@ import (
 
 const defaultFileMaxBytes int64 = 16 << 20
 
-// ErrLimitExceeded reports a resolver resource larger than its explicit cap.
+// ErrLimitExceeded reports a constructor count/input-byte limit or a resolver
+// resource exceeding its content-byte cap.
 var ErrLimitExceeded = errors.New("xsd resolve: resource limit exceeded")
 
 // FileOptions configures an opt-in, root-confined file resolver.
