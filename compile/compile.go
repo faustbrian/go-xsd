@@ -3269,7 +3269,7 @@ func (s *compileState) inlineConstraintValidDepthContext(
 			}
 			if facet.Kind == xsd.FacetPattern {
 				hasPattern = true
-				pattern, err := datatype.CompilePattern(facet.Value)
+				pattern, err := datatype.CompilePatternContext(s.ctx, facet.Value)
 				if err != nil {
 					return false
 				}

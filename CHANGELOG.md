@@ -7,6 +7,21 @@ compatibility.
 
 ### Changed (next major)
 
+- Bound XML Schema pattern class-subtraction depth at 256 (outer class counts
+  as one), independently of XML depth and byte limits. Add
+  `datatype.CompilePatternContext` and propagate compiler/validator contexts
+  through pattern translation; `CompilePattern` remains a synchronous bounded
+  wrapper. Cancellation returns its original cause without a partial result.
+  Standard-library compilation and matching cannot be interrupted in flight.
+  The depth ceiling tightens acceptance for the next major; no release is implied.
+
+- Redact `Diagnostic` and `Location` supported pointer/value formatting, JSON
+  and logging to fixed categories. Exported fields and explicit detailed report
+  projections remain available for trusted inspection. This intentionally
+  breaks default structured encoding for the next major; no release is implied.
+  Invalid Go format verb/type combinations can bypass formatting methods and
+  expose raw fields; use supported verbs or format an explicitly redacted string.
+
 - Bound validator-owned string payload with `validate.Limits.MaxBytes` in
   addition to serialized input, and bound cumulative namespace scope copies and
   declaration insertions with independent `MaxNamespaceEntries` (zero selects
@@ -14,7 +29,7 @@ compatibility.
   before allocating capacity. This tightens acceptance for the next major;
   callers may adjust these policies independently. No release is implied.
 
-- Make `ParseError` default text, pointer/value formatting, JSON and logging
+- Make `ParseError` default text, supported pointer/value formatting, JSON and logging
   expose only `xsd: parse failed`, without evaluating supplied cause callbacks.
   This intentionally breaks verbose error formatting for the next major;
   trusted callers retain `Location`, `Err`, `Unwrap`, `errors.Is` and

@@ -1,5 +1,29 @@
 # Security and limits
 
+XML Schema pattern translation independently bounds source bytes (1 MiB),
+translated bytes (8 MiB), and class-subtraction nesting (inclusive depth 256,
+outer class depth one). Depth refusal occurs before descending into an excluded
+class. `datatype.CompilePatternContext` cooperatively checks its context during
+owned translation, class and rune-set work and before/after standard-library
+compilation, preserving cancellation/deadline causes and returning no partial
+regexp. Standard-library sorting/regexp compilation and matching are synchronous
+bounded operations, not interruptible work. `CompilePattern` uses a background
+context; compiler and validator input patterns use their actual operation context.
+
+For the next major, `Diagnostic` and `Location` supported default formatting,
+JSON and logging return only `xsd: diagnostic` and `xsd: location`. Quoted
+formatting quotes the category; nil pointers retain safe nil/null forms.
+All fields, including arbitrary severity/code strings and source coordinates,
+remain available for explicit trusted inspection and detailed report projection.
+Schema-wire location strings and the XSTS harness's explicit reports are unchanged.
+
+This protection covers supported/default output, not invalid Go format
+verb/type combinations. Go 1.27 processes `%p` on a struct value and invalid
+`%w` through error diagnostics that bypass formatting methods and expose fields.
+`%T` and `%p` on pointers retain intrinsic type/address output. Trusted callers
+must use supported verbs, or format an explicitly redacted string before passing
+it to arbitrary format strings; the same limitation applies to `ParseError`.
+
 Instance ingestion bounds cumulative owned string payload and namespace scope
 copy/declaration work independently of serialized input, text, nodes and
 ordinary attributes. Tree clone cardinalities are admitted before owned map and
@@ -12,7 +36,7 @@ The parser and instance validator forbid DTD directives and do not expand
 external entities. Parsing performs no implicit I/O. Compilation denies file
 and remote resolution unless the caller injects a resolver.
 
-For the next major, non-nil `ParseError` default `Error`, pointer/value `fmt` formats
+For the next major, non-nil `ParseError` default `Error`, supported pointer/value `fmt` formats
 (including Go-syntax formats), JSON and `slog` output expose only the fixed
 `xsd: parse failed` category without evaluating cause formatting, marshaling
 or logging callbacks. Nil and zero receivers return that category from
@@ -21,8 +45,8 @@ a nil pointer, and JSON encodes a nil pointer as `null`.
 Its exported `Location` and `Err` remain unchanged for explicit trusted
 inspection through fields, `Unwrap`, `errors.Is` and `errors.As`. Do not log
 those fields outside that trusted boundary. This is an intentional formatting
-compatibility break, not a release announcement. It does not make standalone
-`Location`, validation `Diagnostic`, compiler or resolver error output private.
+compatibility break, not a release announcement. Compiler and resolver error
+output remain outside these shared value protections.
 
 Parser options bound bytes, XML element depth, and total elements before the
 document model is built. Compiler options bound schema bytes, graph depth,

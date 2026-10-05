@@ -6,6 +6,13 @@ accepts caller-provided XML bytes, `ValidateReader` incrementally reads an
 All three entry points share the same validation engine and deterministic
 diagnostics.
 
+Input-pattern translation shares `datatype.CompilePatternContext` with the
+compiler and receives the validation operation's context. Character-class
+subtraction is bounded at inclusive depth 256 independently of XML depth.
+Cancellation produces the context cause and no assessment result, rather than
+an invalid-instance finding. Owned translation/set work is cooperative; an
+already-running standard-library regexp compile or match cannot be interrupted.
+
 Reader validation does not require the caller to buffer the complete XML
 instance. Parsing still builds a bounded internal tree: byte, depth, node,
 attribute, text, diagnostic, XPath, and identity-value limits remain in
@@ -34,6 +41,13 @@ without modifying the caller's tree or performing implicit I/O.
 Diagnostics contain severity, stable code, message, instance path, system ID,
 line, column, and byte offset. A validation result may contain multiple schema
 errors. Resource-limit or parsing failures are returned as Go errors.
+
+For the next major, default diagnostic/location formatting, JSON and logging
+emit fixed redacted categories, including inside diagnostic slices and Results.
+Trusted callers still inspect the exported fields and stable diagnostic codes
+directly, or deliberately construct a detailed reporting DTO. Invalid Go format
+verb/type diagnostics can bypass redaction; use supported formatting or an
+explicitly redacted string as described in [security](security.md).
 
 The validator covers the features identified in the requirement matrix,
 including supported simple types and facets, particles, wildcards,

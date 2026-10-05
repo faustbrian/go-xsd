@@ -2775,7 +2775,7 @@ func (s *validationState) facetsValid(typeDefinition xsd.SimpleType, lexical str
 			}
 		case xsd.FacetPattern:
 			hasPattern = true
-			pattern, err := datatype.CompilePattern(facet.Value)
+			pattern, err := datatype.CompilePatternContext(s.ctx, facet.Value)
 			if err != nil {
 				return false
 			}

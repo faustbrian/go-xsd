@@ -600,7 +600,10 @@ func (s *compileState) validateRestrictionFacets(typeDefinition xsd.SimpleType) 
 				return fmt.Errorf("%w: whiteSpace weakens or changes its fixed base facet", ErrInvalidComponent)
 			}
 		case xsd.FacetPattern:
-			if _, err := datatype.CompilePattern(facet.Value); err != nil {
+			if _, err := datatype.CompilePatternContext(s.ctx, facet.Value); err != nil {
+				if canceled := s.contextError(); canceled != nil {
+					return canceled
+				}
 				return fmt.Errorf("%w: invalid pattern facet: %v", ErrInvalidComponent, err)
 			}
 		case xsd.FacetEnumeration, xsd.FacetMinInclusive, xsd.FacetMinExclusive,

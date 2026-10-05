@@ -18,12 +18,26 @@ var (
 
 // Location identifies an offset in an input resource. Line and Column are
 // one-based when known; Offset is a zero-based byte offset.
+// Fields are for explicit trusted inspection; supported default output is
+// redacted. Invalid fmt verb/type diagnostics can expose raw fields.
 type Location struct {
 	SystemID string
 	Line     int
 	Column   int
 	Offset   int64
 }
+
+// Format redacts caller-supplied resource identity and operational coordinates.
+func (Location) Format(state fmt.State, verb rune) {
+	if verb == 'q' {
+		_, _ = state.Write([]byte(`"xsd: location"`))
+		return
+	}
+	_, _ = state.Write([]byte("xsd: location"))
+}
+
+// MarshalJSON returns only the fixed category, not the trusted location fields.
+func (Location) MarshalJSON() ([]byte, error) { return []byte(`"xsd: location"`), nil }
 
 // Severity is the stable importance of a validation diagnostic.
 type Severity string
@@ -33,7 +47,9 @@ const (
 	SeverityWarning Severity = "warning"
 )
 
-// Diagnostic is a stable machine-readable schema or instance finding.
+// Diagnostic is a stable schema or instance finding. Fields are available for
+// explicit trusted inspection; supported default output exposes a fixed
+// category. Invalid fmt verb/type diagnostics can expose raw fields.
 type Diagnostic struct {
 	Severity Severity
 	Code     string
@@ -42,9 +58,22 @@ type Diagnostic struct {
 	Location Location
 }
 
+// Format redacts every finding field, including arbitrary severity and code.
+func (Diagnostic) Format(state fmt.State, verb rune) {
+	if verb == 'q' {
+		_, _ = state.Write([]byte(`"xsd: diagnostic"`))
+		return
+	}
+	_, _ = state.Write([]byte("xsd: diagnostic"))
+}
+
+// MarshalJSON returns only the fixed category, not the trusted finding fields.
+func (Diagnostic) MarshalJSON() ([]byte, error) { return []byte(`"xsd: diagnostic"`), nil }
+
 // ParseError retains trusted location and cause information for a parsing
-// failure. Default text, formatting, and JSON expose only a fixed category;
+// failure. Default text, supported formatting, and JSON expose a fixed category;
 // inspect Location and Err explicitly only inside a trusted boundary.
+// Invalid fmt verb/type diagnostics can expose raw fields without calling Format.
 type ParseError struct {
 	Location Location
 	Err      error
