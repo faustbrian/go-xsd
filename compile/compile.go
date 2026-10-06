@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/datatype"
-	"github.com/faustbrian/go-xsd/internal/errsafe"
-	"github.com/faustbrian/go-xsd/resolve"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/datatype"
+	"github.com/faustbrian/go-xsd/v2/internal/errsafe"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 var (

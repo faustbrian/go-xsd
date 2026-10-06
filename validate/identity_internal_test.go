@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestValidateIdentityConstraintsStopsAtEveryLimitBoundary(t *testing.T) {

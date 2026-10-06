@@ -18,9 +18,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/datatype"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/datatype"
 )
 
 type boundedInteger interface {

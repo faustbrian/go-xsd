@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestDiagnosticAndLocationDefaultPrivacy(t *testing.T) {
@@ -50,9 +50,16 @@ func TestDiagnosticAndLocationDefaultPrivacy(t *testing.T) {
 			}
 			for _, text := range []bool{false, true} {
 				var output bytes.Buffer
-				var handler slog.Handler = slog.NewJSONHandler(&output, nil)
+				// Time is logging-envelope metadata, not a diagnostic coordinate.
+				options := &slog.HandlerOptions{ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+					if len(groups) == 0 && attr.Key == slog.TimeKey {
+						return slog.Attr{}
+					}
+					return attr
+				}}
+				var handler slog.Handler = slog.NewJSONHandler(&output, options)
 				if text {
-					handler = slog.NewTextHandler(&output, nil)
+					handler = slog.NewTextHandler(&output, options)
 				}
 				slog.New(handler).Info("operation", slog.Any("finding", test.value))
 				if !strings.Contains(output.String(), test.category) || strings.Contains(output.String(), "synthetic-private-") || strings.Contains(output.String(), "1731") || strings.Contains(output.String(), "2842") || strings.Contains(output.String(), "3953") {

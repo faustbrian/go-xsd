@@ -3,7 +3,7 @@ package compile
 import (
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestCompiledComponentClonesIsolateAnnotations(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/resolve"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 func TestDocumentAccessorsReturnIsolatedCopies(t *testing.T) {

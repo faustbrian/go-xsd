@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/faustbrian/go-xsd/internal/errsafe"
+	"github.com/faustbrian/go-xsd/v2/internal/errsafe"
 )
 
 var (

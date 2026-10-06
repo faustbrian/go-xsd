@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/resolve"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 func TestCompileResolvesCyclesOnceAndAppliesChameleonNamespace(t *testing.T) {

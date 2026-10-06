@@ -3,8 +3,8 @@ package validate
 import (
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/datatype"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/datatype"
 )
 
 func TestSimpleValueEqualityRejectsInvalidOperands(t *testing.T) {

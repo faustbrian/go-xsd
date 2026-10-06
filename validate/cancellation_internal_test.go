@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestValidationOwnerStopsCanceledWork(t *testing.T) {

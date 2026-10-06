@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/validate"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/validate"
 )
 
 func TestPatternOwnersPreserveContextAndOrdinaryAssessment(t *testing.T) {

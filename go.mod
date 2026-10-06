@@ -1,4 +1,4 @@
-module github.com/faustbrian/go-xsd
+module github.com/faustbrian/go-xsd/v2
 
 go 1.27.0
 

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/validate"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/validate"
 )
 
 func TestReferenceDifferentialCorpus(t *testing.T) {

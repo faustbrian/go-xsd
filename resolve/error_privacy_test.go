@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/faustbrian/go-xsd/resolve"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 type privateResolverCause struct{ calls int }

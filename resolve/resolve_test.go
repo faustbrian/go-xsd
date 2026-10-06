@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-xsd/resolve"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 func TestFileResolverReadsOnlyWithinItsConfiguredRoot(t *testing.T) {

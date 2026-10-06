@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/resolve"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/resolve"
 )
 
 func TestRunPropagatesAbsolutePathFailure(t *testing.T) {
