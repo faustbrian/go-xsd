@@ -70,6 +70,41 @@ func TestLoadResourceBranches(t *testing.T) {
 	}
 }
 
+func TestLoadOwnerCancellationPreventsCacheAndResolverWork(t *testing.T) {
+	t.Parallel()
+
+	const resourceURI = "https://example.test/ordinary.xsd"
+	content := []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"/>`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resolverCalls := 0
+	state := loadState(t, funcResolver(func(_ context.Context, request resolve.Request) (resolve.Resource, error) {
+		resolverCalls++
+		return resolve.Resource{URI: request.URI, Content: content}, nil
+	}), 1024)
+	state.ctx = ctx
+	document, identity, err := state.load(ctx, xsd.SchemaReference{URI: resourceURI})
+	if err != nil || document == nil || document.SystemID != resourceURI || identity != resourceURI {
+		t.Fatalf("live load() = %#v, %q, %v", document, identity, err)
+	}
+	if resolverCalls != 1 || state.bytes != int64(len(content)) || len(state.resources) != 1 ||
+		state.resources[resourceURI].document != document {
+		t.Fatal("live load did not retain exactly one resolved resource")
+	}
+
+	cancel()
+	for _, uri := range []string{resourceURI, "https://example.test/uncached.xsd"} {
+		loaded, loadedIdentity, loadErr := state.load(ctx, xsd.SchemaReference{URI: uri})
+		if loaded != nil || loadedIdentity != "" || !errors.Is(loadErr, context.Canceled) {
+			t.Errorf("canceled load(%q) = %#v, %q, %v", uri, loaded, loadedIdentity, loadErr)
+		}
+		if resolverCalls != 1 || state.bytes != int64(len(content)) || len(state.resources) != 1 ||
+			state.resources[resourceURI].document != document {
+			t.Errorf("canceled load(%q) changed resolver, cache or byte ownership", uri)
+		}
+	}
+}
+
 func loadState(t *testing.T, resolver resolve.Resolver, maxBytes int64) *compileState {
 	t.Helper()
 	compiler, err := New(Options{Resolver: resolver, Limits: Limits{MaxBytes: maxBytes}})
