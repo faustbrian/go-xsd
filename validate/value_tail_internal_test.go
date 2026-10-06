@@ -52,10 +52,10 @@ func TestIdentityFieldValueBoundaryBranches(t *testing.T) {
 	if got := state.identityFieldValues(node, "@missing:value", nil); got != nil {
 		t.Fatalf("identityFieldValues(invalid QName) = %#v", got)
 	}
-	if got := followIdentityElementPath([]*instanceNode{node}, []string{""}, nil); got != nil {
+	if got := state.followIdentityElementPath([]*instanceNode{node}, []string{""}, nil); got != nil {
 		t.Fatalf("followIdentityElementPath(empty) = %#v", got)
 	}
-	if got := followIdentityElementPath([]*instanceNode{node}, []string{"."}, nil); len(got) != 1 || got[0] != node {
+	if got := state.followIdentityElementPath([]*instanceNode{node}, []string{"."}, nil); len(got) != 1 || got[0] != node {
 		t.Fatalf("followIdentityElementPath(current) = %#v", got)
 	}
 	child := identityTestNode("child")
@@ -68,23 +68,23 @@ func TestIdentityFieldValueBoundaryBranches(t *testing.T) {
 	if got := state.identityFieldValues(node, ".//./@first", nil); len(got) != 1 || got[0] != "lexical:a" {
 		t.Fatalf("identityFieldValues(.//./@first) = %#v", got)
 	}
-	selected := selectIdentityNodes(node, xsd.IdentityConstraint{Selector: ".//."})
+	selected := state.selectIdentityNodes(node, xsd.IdentityConstraint{Selector: ".//."})
 	if len(selected) != 1 || selected[0] != child {
 		t.Fatalf("selectIdentityNodes(.//.) = %#v", selected)
 	}
 	child.Nillable = true
 	for _, field := range []string{"child", ".//.", ".//child", ".//missing | .//child"} {
-		if !identityFieldSelectsNillable(node, field, nil) {
+		if !state.identityFieldSelectsNillable(node, field, nil) {
 			t.Fatalf("identityFieldSelectsNillable(%q) = false", field)
 		}
 	}
 	for _, field := range []string{".", "@first", ".//missing | .//other"} {
-		if identityFieldSelectsNillable(node, field, nil) {
+		if state.identityFieldSelectsNillable(node, field, nil) {
 			t.Fatalf("identityFieldSelectsNillable(%q) = true", field)
 		}
 	}
 	node.Nillable = true
-	if !identityFieldSelectsNillable(node, ".", nil) {
+	if !state.identityFieldSelectsNillable(node, ".", nil) {
 		t.Fatal("identityFieldSelectsNillable(.) = false")
 	}
 }

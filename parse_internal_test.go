@@ -12,10 +12,15 @@ import (
 func TestParseInlineSimpleTypesBranches(t *testing.T) {
 	t.Parallel()
 
-	decoder, start := decoderAtStart(t, `<list xmlns="`+Namespace+`">`+
-		`<annotation><documentation>item</documentation></annotation>`+
-		`<simpleType><restriction base="string"/></simpleType></list>`)
-	types, annotation, err := parseInlineSimpleTypes(
+	source := `<list xmlns="` + Namespace + `">` +
+		`<annotation><documentation>item</documentation></annotation>` +
+		`<simpleType><restriction base="string"/></simpleType></list>`
+	decoder, start := decoderAtStart(t, source)
+	owner := newSchemaParser(context.Background(), []byte(source), ParseOptions{})
+	if err := owner.prepareAnnotationSpans(ParseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	types, annotation, err := owner.parseInlineSimpleTypes(
 		decoder,
 		start,
 		map[string]string{"": Namespace},
@@ -43,7 +48,7 @@ func TestParseInlineSimpleTypesBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, _, err := parseInlineSimpleTypes(decoder, start, nil)
+			_, _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseInlineSimpleTypes(decoder, start, nil)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseInlineSimpleTypes() error = %v, want %v", err, test.want)
 			}
@@ -56,7 +61,7 @@ func TestParseSimpleTypeBranches(t *testing.T) {
 
 	decoder, start := decoderAtStart(t, `<simpleType xmlns="`+Namespace+`" xmlns:f="urn:foreign" name="Code" final="restriction" f:ignored="yes">`+
 		`<annotation id="code"/><restriction base="string"><minLength value="1"/></restriction></simpleType>`)
-	definition, err := parseSimpleType(
+	definition, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseSimpleType(
 		decoder,
 		start,
 		map[string]string{"": Namespace},
@@ -96,7 +101,7 @@ func TestParseSimpleTypeBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseSimpleType(decoder, start, nil)
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseSimpleType(decoder, start, nil)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseSimpleType() error = %v, want %v", err, test.want)
 			}
@@ -164,8 +169,9 @@ func TestForeignExtensionElementsAreRejectedAtEverySchemaBoundary(t *testing.T) 
 		`<group name="Items"><f:extension/></group>`,
 	} {
 		source := `<schema xmlns="` + Namespace + `" xmlns:f="urn:extension">` + body + `</schema>`
-		if _, err := Parse(context.Background(), []byte(source), ParseOptions{}); err == nil ||
-			!strings.Contains(err.Error(), "unexpected element") {
+		_, err := Parse(context.Background(), []byte(source), ParseOptions{})
+		var parseErr *ParseError
+		if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), "unexpected element") {
 			t.Fatalf("Parse(%s) error = %v, want unexpected element", body, err)
 		}
 	}
@@ -180,7 +186,7 @@ func TestNamespaceScopePreservesParentAndCapturesDeclarations(t *testing.T) {
 		{Name: xml.Name{Space: "xmlns", Local: "p"}, Value: "urn:child"},
 		{Name: xml.Name{Local: "name"}, Value: "ignored"},
 	}}
-	scope := namespaceScope(parent, start)
+	scope := newSchemaParser(context.Background(), nil, ParseOptions{}).namespaceScope(parent, start)
 	if scope[""] != "urn:default" || scope["p"] != "urn:child" ||
 		parent["p"] != "urn:parent" || len(parent) != 1 {
 		t.Fatalf("namespaceScope() = %#v, parent = %#v", scope, parent)
@@ -258,7 +264,8 @@ func TestSimpleContentRestrictionGrammarDoesNotLeakIntoOtherDerivations(t *testi
 			_, err := Parse(context.Background(), []byte(
 				`<schema xmlns="`+Namespace+`"><complexType name="T">`+test.body+`</complexType></schema>`,
 			), ParseOptions{})
-			if err == nil || !strings.Contains(err.Error(), test.want) {
+			var parseErr *ParseError
+			if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), test.want) {
 				t.Fatalf("Parse() error = %v, want %q", err, test.want)
 			}
 		})
@@ -297,7 +304,7 @@ func TestParseDocumentPropagatesComponentErrors(t *testing.T) {
 			decoder, start := decoderAtStart(t, schema)
 			done := make(chan error, 1)
 			go func() {
-				_, err := parseDocument(decoder, start, "test.xsd")
+				_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseDocument(decoder, start, "test.xsd")
 				done <- err
 			}()
 			var err error
@@ -351,7 +358,7 @@ func TestParseRejectsUnknownAttributesAtGrammarBoundaries(t *testing.T) {
 	}
 
 	decoder, start := decoderAtStart(t, `<redefine xmlns="`+Namespace+`" unknown="x"/>`)
-	if _, err := parseRedefinition(
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseRedefinition(
 		decoder,
 		start,
 		SchemaReference{Kind: ReferenceRedefine},
@@ -362,17 +369,22 @@ func TestParseRejectsUnknownAttributesAtGrammarBoundaries(t *testing.T) {
 }
 
 func TestParseContentDerivationBranches(t *testing.T) {
-	decoder, start := decoderAtStart(t, `<complexContent xmlns="`+Namespace+`" mixed="true">`+
-		`<annotation><documentation>content</documentation></annotation>`+
-		`<extension xmlns:t="urn:types" base="t:Base">`+
-		`<annotation><documentation>derivation</documentation></annotation>`+
-		`<group ref="t:Items"><annotation/></group>`+
-		`<attribute name="code" type="string"><annotation/></attribute>`+
-		`<attributeGroup ref="t:Metadata"><annotation/></attributeGroup>`+
-		`<anyAttribute namespace="##other"><annotation/></anyAttribute>`+
-		`</extension></complexContent>`)
+	source := `<complexContent xmlns="` + Namespace + `" mixed="true">` +
+		`<annotation><documentation>content</documentation></annotation>` +
+		`<extension xmlns:t="urn:types" base="t:Base">` +
+		`<annotation><documentation>derivation</documentation></annotation>` +
+		`<group ref="t:Items"><annotation/></group>` +
+		`<attribute name="code" type="string"><annotation/></attribute>` +
+		`<attributeGroup ref="t:Metadata"><annotation/></attributeGroup>` +
+		`<anyAttribute namespace="##other"><annotation/></anyAttribute>` +
+		`</extension></complexContent>`
+	decoder, start := decoderAtStart(t, source)
+	owner := newSchemaParser(context.Background(), []byte(source), ParseOptions{})
+	if err := owner.prepareAnnotationSpans(ParseOptions{}); err != nil {
+		t.Fatal(err)
+	}
 	definition := ComplexType{}
-	err := parseContentDerivation(
+	err := owner.parseContentDerivation(
 		decoder,
 		start,
 		&definition,
@@ -410,7 +422,7 @@ func TestParseContentDerivationBranches(t *testing.T) {
 			decoder, start := decoderAtStart(t, test.xml)
 			done := make(chan error, 1)
 			go func() {
-				done <- parseContentDerivation(decoder, start, &ComplexType{}, nil)
+				done <- newSchemaParser(context.Background(), nil, ParseOptions{}).parseContentDerivation(decoder, start, &ComplexType{}, nil)
 			}()
 			var err error
 			select {
@@ -430,7 +442,7 @@ func TestParseRedefinitionPropagatesAnnotationErrors(t *testing.T) {
 
 	decoder, start := decoderAtStart(t, `<redefine xmlns="`+Namespace+`" schemaLocation="base.xsd">`+
 		`<annotation unknown="value"/></redefine>`)
-	if _, err := parseRedefinition(
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseRedefinition(
 		decoder,
 		start,
 		SchemaReference{Kind: ReferenceRedefine, URI: "base.xsd"},
@@ -448,7 +460,7 @@ func TestParseComplexTypeBranches(t *testing.T) {
 		`<attributeGroup ref="Metadata"><annotation/></attributeGroup>`+
 		`<anyAttribute namespace="##other"><annotation/></anyAttribute>`+
 		`</complexType>`)
-	definition, err := parseComplexType(
+	definition, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseComplexType(
 		decoder,
 		start,
 		map[string]string{"": Namespace},
@@ -493,7 +505,7 @@ func TestParseComplexTypeBranches(t *testing.T) {
 			decoder, start := decoderAtStart(t, test.xml)
 			done := make(chan error, 1)
 			go func() {
-				_, err := parseComplexType(decoder, start, nil)
+				_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseComplexType(decoder, start, nil)
 				done <- err
 			}()
 			var err error
@@ -535,7 +547,7 @@ func TestParseDerivationBodyRejectsInvalidChildren(t *testing.T) {
 			decoder, start := decoderAtStart(t, test.xml)
 			done := make(chan error, 1)
 			go func() {
-				done <- parseDerivationBody(decoder, start, &ComplexType{}, nil)
+				done <- newSchemaParser(context.Background(), nil, ParseOptions{}).parseDerivationBody(decoder, start, &ComplexType{}, nil)
 			}()
 			var err error
 			select {
@@ -558,7 +570,7 @@ func TestParseDerivationBodyRejectsInvalidChildren(t *testing.T) {
 			SimpleContent: true,
 			Derivation:    DerivationRestriction,
 		}
-		if err := parseDerivationBody(decoder, start, &definition, nil); err == nil {
+		if err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseDerivationBody(decoder, start, &definition, nil); err == nil {
 			t.Fatal("parseDerivationBody() accepted multiple inline simple types")
 		}
 	})
@@ -618,7 +630,7 @@ func TestParseRestrictionFacetBranches(t *testing.T) {
 		`<minLength xmlns:f="urn:foreign" value="1" fixed="true" f:ignored="yes"><annotation/></minLength>`+
 		`</restriction>`)
 	definition := SimpleType{}
-	err := parseRestrictionFacets(
+	err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseRestrictionFacets(
 		decoder,
 		start,
 		&definition,
@@ -659,7 +671,7 @@ func TestParseRestrictionFacetBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			err := parseRestrictionFacets(decoder, start, &SimpleType{}, nil)
+			err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseRestrictionFacets(decoder, start, &SimpleType{}, nil)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseRestrictionFacets() error = %v, want %v", err, test.want)
 			}
@@ -675,7 +687,7 @@ func TestParseModelGroupBranches(t *testing.T) {
 		`<group ref="t:Items"><annotation/></group>`+
 		`<choice><element name="alternative"/></choice>`+
 		`</sequence>`)
-	group, err := parseModelGroup(
+	group, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseModelGroup(
 		decoder,
 		start,
 		Sequence,
@@ -719,7 +731,7 @@ func TestParseModelGroupBranches(t *testing.T) {
 			decoder, start := decoderAtStart(t, test.xml)
 			done := make(chan error, 1)
 			go func() {
-				_, err := parseModelGroup(decoder, start, Sequence, nil)
+				_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseModelGroup(decoder, start, Sequence, nil)
 				done <- err
 			}()
 			var err error
@@ -757,14 +769,19 @@ func TestSetModelGroupOccurrenceBranches(t *testing.T) {
 func TestParseRedefinitionBranches(t *testing.T) {
 	t.Parallel()
 
-	decoder, start := decoderAtStart(t, `<redefine xmlns="`+Namespace+`">`+
-		`<annotation><documentation>replacement</documentation></annotation>`+
-		`<simpleType name="Code"><restriction base="string"/></simpleType>`+
-		`<complexType name="Record"/>`+
-		`<group name="Items"><sequence/></group>`+
-		`<attributeGroup name="Metadata"/>`+
-		`</redefine>`)
-	got, err := parseRedefinition(
+	source := `<redefine xmlns="` + Namespace + `">` +
+		`<annotation><documentation>replacement</documentation></annotation>` +
+		`<simpleType name="Code"><restriction base="string"/></simpleType>` +
+		`<complexType name="Record"/>` +
+		`<group name="Items"><sequence/></group>` +
+		`<attributeGroup name="Metadata"/>` +
+		`</redefine>`
+	decoder, start := decoderAtStart(t, source)
+	owner := newSchemaParser(context.Background(), []byte(source), ParseOptions{})
+	if err := owner.prepareAnnotationSpans(ParseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := owner.parseRedefinition(
 		decoder,
 		start,
 		SchemaReference{Kind: ReferenceRedefine},
@@ -802,7 +819,7 @@ func TestParseRedefinitionBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseRedefinition(decoder, start, SchemaReference{}, nil)
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseRedefinition(decoder, start, SchemaReference{}, nil)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseRedefinition() error = %v, want %v", err, test.want)
 			}
@@ -819,7 +836,7 @@ func TestSchemaReferenceResolutionBranches(t *testing.T) {
 		{Name: xml.Name{Local: "schemaLocation"}, Value: "types.xsd"},
 		{Name: xml.Name{Space: xmlNamespace, Local: "base"}, Value: "schemas/"},
 	}}
-	reference, err := parseSchemaReference(
+	reference, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseSchemaReference(
 		ReferenceImport,
 		"https://example.test/root.xsd",
 		start,
@@ -832,7 +849,7 @@ func TestSchemaReferenceResolutionBranches(t *testing.T) {
 		reference.URI != "https://example.test/schemas/types.xsd" {
 		t.Fatalf("reference = %#v", reference)
 	}
-	withoutLocation, err := parseSchemaReference(ReferenceImport, "", xml.StartElement{})
+	withoutLocation, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseSchemaReference(ReferenceImport, "", xml.StartElement{})
 	if err != nil || withoutLocation.URI != "" {
 		t.Fatalf("locationless reference = %#v, %v", withoutLocation, err)
 	}
@@ -855,7 +872,7 @@ func TestSchemaReferenceResolutionBranches(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := parseSchemaReference(
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseSchemaReference(
 				ReferenceInclude,
 				test.base,
 				xml.StartElement{Attr: []xml.Attr{test.attr}},
@@ -866,10 +883,10 @@ func TestSchemaReferenceResolutionBranches(t *testing.T) {
 		})
 	}
 
-	if _, err := resolveURI("%", "child.xsd"); err == nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).resolveURI("%", "child.xsd"); err == nil {
 		t.Fatal("resolveURI() accepted an invalid base URI")
 	}
-	if got, err := resolveURI("", "child.xsd"); err != nil || got != "child.xsd" {
+	if got, err := newSchemaParser(context.Background(), nil, ParseOptions{}).resolveURI("", "child.xsd"); err != nil || got != "child.xsd" {
 		t.Fatalf("resolveURI() = %q, %v", got, err)
 	}
 }
@@ -895,11 +912,16 @@ func TestReferenceKindDecisionTable(t *testing.T) {
 func TestAnnotationParsingBranches(t *testing.T) {
 	t.Parallel()
 
-	decoder, start := decoderAtStart(t, `<annotation xmlns="`+Namespace+`" id="notes">`+
-		`<documentation source="urn:docs" xml:lang="en"> Read <b xmlns="urn:doc">this</b> </documentation>`+
-		`<appinfo source="urn:tool"><tool xmlns="urn:tool"/></appinfo>`+
-		`</annotation>`)
-	annotation, err := parseAnnotation(decoder, start)
+	source := `<annotation xmlns="` + Namespace + `" id="notes">` +
+		`<documentation source="urn:docs" xml:lang="en"> Read <b xmlns="urn:doc">this</b> </documentation>` +
+		`<appinfo source="urn:tool"><tool xmlns="urn:tool"/></appinfo>` +
+		`</annotation>`
+	decoder, start := decoderAtStart(t, source)
+	owner := newSchemaParser(context.Background(), []byte(source), ParseOptions{})
+	if err := owner.prepareAnnotationSpans(ParseOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	annotation, err := owner.parseAnnotation(decoder, start)
 	if err != nil {
 		t.Fatalf("parseAnnotation() error = %v", err)
 	}
@@ -926,7 +948,7 @@ func TestAnnotationParsingBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseAnnotation(decoder, start)
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAnnotation(decoder, start)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseAnnotation() error = %v, want %v", err, test.want)
 			}
@@ -934,7 +956,7 @@ func TestAnnotationParsingBranches(t *testing.T) {
 	}
 
 	for _, markup := range []string{"plain <b>text</b>", "<!DOCTYPE unsafe>", "<broken>"} {
-		text, err := documentationText(markup)
+		text, err := newSchemaParser(context.Background(), nil, ParseOptions{}).documentationText(markup)
 		if markup == "plain <b>text</b>" {
 			if err != nil || text != "plain text" {
 				t.Fatalf("documentationText(%q) = %q, %v", markup, text, err)
@@ -950,7 +972,7 @@ func TestAnnotationChildrenAndAttributeBodyBranches(t *testing.T) {
 
 	decoder, start := decoderAtStart(t, `<element xmlns="`+Namespace+`">`+
 		`<annotation id="child"/></element>`)
-	annotation, err := parseAnnotationChildren(decoder, start)
+	annotation, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAnnotationChildren(decoder, start)
 	if err != nil || annotation == nil || annotation.ID != "child" {
 		t.Fatalf("parseAnnotationChildren() = %#v, %v", annotation, err)
 	}
@@ -959,7 +981,7 @@ func TestAnnotationChildrenAndAttributeBodyBranches(t *testing.T) {
 		`<annotation id="attribute"/>`+
 		`<simpleType><restriction base="string"/></simpleType>`+
 		`</attribute>`)
-	inline, annotation, err := parseAttributeBody(
+	inline, annotation, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeBody(
 		decoder,
 		start,
 		map[string]string{"": Namespace},
@@ -999,9 +1021,9 @@ func TestAnnotationChildrenAndAttributeBodyBranches(t *testing.T) {
 			decoder, start := decoderAtStart(t, test.xml)
 			var err error
 			if test.attribute {
-				_, _, err = parseAttributeBody(decoder, start, nil)
+				_, _, err = newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeBody(decoder, start, nil)
 			} else {
-				_, err = parseAnnotationChildren(decoder, start)
+				_, err = newSchemaParser(context.Background(), nil, ParseOptions{}).parseAnnotationChildren(decoder, start)
 			}
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parser error = %v, want %v", err, test.want)
@@ -1016,7 +1038,7 @@ func TestNotationParsingBranches(t *testing.T) {
 	decoder, start := decoderAtStart(t, `<notation xmlns="`+Namespace+`" xmlns:f="urn:foreign"`+
 		` id="image" name="png" public="image/png" system="png.dat"`+
 		` f:foreign="ignored"><annotation/></notation>`)
-	notation, err := parseNotation(decoder, start)
+	notation, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseNotation(decoder, start)
 	if err != nil || notation.ID != "image" || notation.Name != "png" ||
 		notation.Public != "image/png" || notation.System != "png.dat" ||
 		notation.Annotation == nil {
@@ -1037,7 +1059,7 @@ func TestNotationParsingBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			decoder, start := decoderAtStart(t, test.xml)
-			_, err := parseNotation(decoder, start)
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseNotation(decoder, start)
 			if err == nil || test.want != nil && !errors.Is(err, test.want) {
 				t.Fatalf("parseNotation() error = %v, want %v", err, test.want)
 			}
@@ -1107,7 +1129,7 @@ func TestParticleAttributeAndWildcardParsingBranches(t *testing.T) {
 		}
 	}
 
-	wildcard, err := parseWildcard(xml.StartElement{Attr: []xml.Attr{
+	wildcard, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseWildcard(xml.StartElement{Attr: []xml.Attr{
 		{Name: xml.Name{Local: "namespace"}, Value: "urn:a urn:b"},
 		{Name: xml.Name{Local: "processContents"}, Value: "lax"},
 		{Name: xml.Name{Space: "urn:foreign", Local: "ignored"}, Value: "yes"},
@@ -1116,7 +1138,7 @@ func TestParticleAttributeAndWildcardParsingBranches(t *testing.T) {
 		wildcard.ProcessContents != ProcessLax {
 		t.Fatalf("parseWildcard() = %#v, %v", wildcard, err)
 	}
-	if got, err := parseWildcard(xml.StartElement{}); err != nil ||
+	if got, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseWildcard(xml.StartElement{}); err != nil ||
 		got.ProcessContents != ProcessStrict || got.Namespaces[0] != "##any" {
 		t.Fatalf("default wildcard = %#v, %v", got, err)
 	}
@@ -1124,13 +1146,13 @@ func TestParticleAttributeAndWildcardParsingBranches(t *testing.T) {
 		{{Name: xml.Name{Local: "namespace"}, Value: " "}},
 		{{Name: xml.Name{Local: "processContents"}, Value: "invalid"}},
 	} {
-		if _, err := parseWildcard(xml.StartElement{Attr: attrs}); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseWildcard(xml.StartElement{Attr: attrs}); err == nil {
 			t.Fatalf("parseWildcard(%#v) succeeded", attrs)
 		}
 	}
 
 	namespaces := map[string]string{"g": "urn:groups"}
-	group, err := parseGroupReferenceParticle(xml.StartElement{Attr: []xml.Attr{
+	group, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseGroupReferenceParticle(xml.StartElement{Attr: []xml.Attr{
 		{Name: xml.Name{Local: "ref"}, Value: "g:Items"},
 		{Name: xml.Name{Local: "minOccurs"}, Value: "0"},
 	}}, namespaces)
@@ -1142,19 +1164,19 @@ func TestParticleAttributeAndWildcardParsingBranches(t *testing.T) {
 		{{Name: xml.Name{Local: "ref"}, Value: "missing:Items"}},
 		nil,
 	} {
-		if _, err := parseGroupReferenceParticle(xml.StartElement{Attr: attrs}, nil); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseGroupReferenceParticle(xml.StartElement{Attr: attrs}, nil); err == nil {
 			t.Fatalf("parseGroupReferenceParticle(%#v) succeeded", attrs)
 		}
 	}
-	if got, err := parseAttributeGroupReference(xml.StartElement{Attr: []xml.Attr{{
+	if got, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeGroupReference(xml.StartElement{Attr: []xml.Attr{{
 		Name: xml.Name{Local: "ref"}, Value: "g:Metadata",
 	}}}, namespaces); err != nil || got.Local != "Metadata" {
 		t.Fatalf("parseAttributeGroupReference() = %#v, %v", got, err)
 	}
-	if _, err := parseAttributeGroupReference(xml.StartElement{}, nil); err == nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeGroupReference(xml.StartElement{}, nil); err == nil {
 		t.Fatal("parseAttributeGroupReference() accepted a missing ref")
 	}
-	if _, err := parseAttributeGroupReference(xml.StartElement{Attr: []xml.Attr{{
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeGroupReference(xml.StartElement{Attr: []xml.Attr{{
 		Name: xml.Name{Local: "ref"}, Value: "missing:Metadata",
 	}}}, nil); err == nil {
 		t.Fatal("parseAttributeGroupReference() accepted an unknown prefix")
@@ -1182,7 +1204,7 @@ func TestDeclarationAttributesRejectInvalidLexicalValues(t *testing.T) {
 		test := test
 		t.Run("element "+test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := parseElement(xml.StartElement{Attr: []xml.Attr{{
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseElement(xml.StartElement{Attr: []xml.Attr{{
 				Name:  xml.Name{Local: test.attribute},
 				Value: test.value,
 			}}}, namespaces)
@@ -1205,7 +1227,7 @@ func TestDeclarationAttributesRejectInvalidLexicalValues(t *testing.T) {
 		test := test
 		t.Run("attribute use "+test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := parseAttributeUse(xml.StartElement{Attr: []xml.Attr{{
+			_, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeUse(xml.StartElement{Attr: []xml.Attr{{
 				Name:  xml.Name{Local: test.attribute},
 				Value: test.value,
 			}}}, namespaces)
@@ -1252,7 +1274,7 @@ func TestIdentityConstraintErrorBranches(t *testing.T) {
 		`<key xmlns="` + Namespace + `"><unknown>`,
 	} {
 		decoder, start := decoderAtStart(t, source)
-		if _, err := parseIdentityConstraint(
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseIdentityConstraint(
 			decoder,
 			start,
 			IdentityKey,
@@ -1263,7 +1285,7 @@ func TestIdentityConstraintErrorBranches(t *testing.T) {
 	}
 
 	decoder, start := decoderAtStart(t, `<key xmlns="`+Namespace+`" xmlns:f="urn:foreign" f:ignored="yes"/>`)
-	if _, err := parseIdentityConstraint(decoder, start, IdentityKey, nil); err != nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseIdentityConstraint(decoder, start, IdentityKey, nil); err != nil {
 		t.Fatalf("parseIdentityConstraint() error = %v", err)
 	}
 }
@@ -1282,7 +1304,7 @@ func TestNestedComponentErrorBranches(t *testing.T) {
 			`<complexType/></element>`,
 	} {
 		decoder, start := decoderAtStart(t, source)
-		if err := parseElementBody(decoder, start, &Element{}, nil); err == nil {
+		if err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseElementBody(decoder, start, &Element{}, nil); err == nil {
 			t.Fatalf("parseElementBody(%q) succeeded", source)
 		}
 	}
@@ -1292,7 +1314,7 @@ func TestNestedComponentErrorBranches(t *testing.T) {
 		`<group xmlns="` + Namespace + `"><unknown>`,
 	} {
 		decoder, start := decoderAtStart(t, source)
-		if _, err := parseModelGroupDefinition(decoder, start, nil); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseModelGroupDefinition(decoder, start, nil); err == nil {
 			t.Fatalf("parseModelGroupDefinition(%q) succeeded", source)
 		}
 	}
@@ -1308,12 +1330,12 @@ func TestNestedComponentErrorBranches(t *testing.T) {
 		`<attributeGroup xmlns="` + Namespace + `"><unknown>`,
 	} {
 		decoder, start := decoderAtStart(t, source)
-		if _, err := parseAttributeGroupDefinition(decoder, start, nil); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeGroupDefinition(decoder, start, nil); err == nil {
 			t.Fatalf("parseAttributeGroupDefinition(%q) succeeded", source)
 		}
 	}
 	decoder, start := decoderAtStart(t, `<attributeGroup xmlns="`+Namespace+`" xmlns:g="urn:groups"><attributeGroup ref="g:Group"><annotation>`)
-	if _, err := parseAttributeGroupDefinition(
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeGroupDefinition(
 		decoder,
 		start,
 		map[string]string{"g": "urn:groups"},
@@ -1342,25 +1364,25 @@ func TestParserBoundaryBranches(t *testing.T) {
 		`<schema xmlns="` + Namespace + `"><!DOCTYPE schema></schema>`,
 	} {
 		decoder, start := decoderAtStart(t, source)
-		if _, err := parseDocument(decoder, start, "test.xsd"); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseDocument(decoder, start, "test.xsd"); err == nil {
 			t.Fatalf("parseDocument(%q) succeeded", source)
 		}
 	}
 
 	for _, lexical := range []string{"", " value", ":value", "value:", "one:two:three"} {
-		if _, err := parseQName(lexical, nil); err == nil {
+		if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseQName(lexical, nil); err == nil {
 			t.Fatalf("parseQName(%q) succeeded", lexical)
 		}
 	}
 
 	foreign := xml.Name{Space: "urn:foreign", Local: "ignored"}
-	if _, err := parseElement(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseElement(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
 		t.Fatalf("parseElement() error = %v", err)
 	}
-	if _, err := parseAttribute(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttribute(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
 		t.Fatalf("parseAttribute() error = %v", err)
 	}
-	if _, err := parseAttributeUse(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeUse(xml.StartElement{Attr: []xml.Attr{{Name: foreign}}}, nil); err != nil {
 		t.Fatalf("parseAttributeUse() error = %v", err)
 	}
 	if _, err := Parse(context.Background(), []byte(
@@ -1376,7 +1398,7 @@ func TestParseSimpleContentRestrictionFailures(t *testing.T) {
 	t.Parallel()
 
 	decoder := xml.NewDecoder(strings.NewReader(""))
-	if _, err := parseFacet(decoder, xml.StartElement{
+	if _, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseFacet(decoder, xml.StartElement{
 		Name: xml.Name{Space: Namespace, Local: "unknown"},
 	}, nil); err == nil {
 		t.Fatal("parseFacet(unknown) succeeded")

@@ -10,6 +10,7 @@ import (
 
 	xsd "github.com/faustbrian/go-xsd"
 	"github.com/faustbrian/go-xsd/datatype"
+	"github.com/faustbrian/go-xsd/internal/errsafe"
 	"github.com/faustbrian/go-xsd/resolve"
 )
 
@@ -23,12 +24,13 @@ var (
 )
 
 const (
-	defaultMaxSchemas    = 256
-	defaultMaxDepth      = 64
-	defaultMaxReferences = 4096
-	defaultMaxBytes      = 64 << 20
-	defaultMaxComponents = 100000
-	defaultMaxParticles  = 1000000
+	defaultMaxSchemas        = 256
+	defaultMaxDepth          = 64
+	defaultMaxReferences     = 4096
+	defaultMaxBytes          = 64 << 20
+	defaultMaxComponents     = 100000
+	defaultMaxParticles      = 1000000
+	defaultMaxParticleCopies = 1000000
 )
 
 func compileDepthExceeded(depth int) bool {
@@ -47,6 +49,15 @@ type Limits struct {
 	MaxBytes      int64
 	MaxComponents int
 	MaxParticles  int
+	// MaxParticleCopies bounds cumulative compiler-owned particle slots copied or
+	// synthesized per Compile call, including temporary and redefined content.
+	// Zero selects 1,000,000 independently of MaxParticles (the final count).
+	MaxParticleCopies int
+	// MaxParseNamespaceEntries and MaxParseModelBytes independently bound owned
+	// parsing work per document, not cumulatively across the schema graph.
+	// Zero selects parser defaults (1,000,000 entries and 64 MiB).
+	MaxParseNamespaceEntries int
+	MaxParseModelBytes       int64
 }
 
 // Options configures a Compiler. A nil Resolver denies every external load.
@@ -91,6 +102,9 @@ func New(options Options) (*Compiler, error) {
 	if limits.MaxParticles == 0 {
 		limits.MaxParticles = defaultMaxParticles
 	}
+	if limits.MaxParticleCopies == 0 {
+		limits.MaxParticleCopies = defaultMaxParticleCopies
+	}
 	resolver := options.Resolver
 	if resolver == nil {
 		resolver = resolve.Deny()
@@ -99,6 +113,9 @@ func New(options Options) (*Compiler, error) {
 }
 
 func validateLimits(limits Limits) error {
+	if limits.MaxParseNamespaceEntries < 0 || limits.MaxParseModelBytes < 0 {
+		return fmt.Errorf("xsd compile: limits must not be negative")
+	}
 	if limits.MaxSchemas < 0 {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
@@ -115,6 +132,9 @@ func validateLimits(limits Limits) error {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
 	if limits.MaxParticles < 0 {
+		return fmt.Errorf("xsd compile: limits must not be negative")
+	}
+	if limits.MaxParticleCopies < 0 {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
 	return nil
@@ -162,9 +182,16 @@ func (s *Set) AttributeGroupNames() []xsd.QName { return sortedComponentNames(s.
 // NotationNames returns global notation names in expanded-name order.
 func (s *Set) NotationNames() []xsd.QName { return sortedComponentNames(s.notations) }
 
-func sortedComponentNames[T any](components map[xsd.QName]T) []xsd.QName {
+func sortedComponentNames[T any](components map[xsd.QName]T, owner ...*compileState) []xsd.QName {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	names := make([]xsd.QName, 0, len(components))
 	for name := range components {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		names = append(names, name)
 	}
 	sort.Slice(names, func(left, right int) bool {
@@ -212,12 +239,22 @@ func (s *Set) Notation(name xsd.QName) (xsd.Notation, bool) {
 
 // SubstitutionMember resolves member when it may substitute for head.
 func (s *Set) SubstitutionMember(head xsd.QName, member xsd.QName) (xsd.Element, bool) {
+	return substitutionMember(s, head, member)
+}
+
+func substitutionMember(s *Set, head xsd.QName, member xsd.QName, owner ...*compileState) (xsd.Element, bool) {
+	if compileOwnerError(owner) != nil {
+		return xsd.Element{}, false
+	}
 	headDeclaration, ok := s.elements[head]
 	if !ok || headDeclaration.Block.Contains(xsd.DerivationSubstitution) {
 		return xsd.Element{}, false
 	}
 	current := member
 	for current.Local != "" {
+		if compileOwnerError(owner) != nil {
+			return xsd.Element{}, false
+		}
 		direct, affiliated := s.substitutionHeads[current]
 		if !affiliated {
 			return xsd.Element{}, false
@@ -227,7 +264,7 @@ func (s *Set) SubstitutionMember(head xsd.QName, member xsd.QName) (xsd.Element,
 			if !exists {
 				return xsd.Element{}, false
 			}
-			methods, derived := setElementTypeDerivationMethods(s, declaration, headDeclaration.Type)
+			methods, derived := setElementTypeDerivationMethods(s, declaration, headDeclaration.Type, owner...)
 			if !derived {
 				return xsd.Element{}, false
 			}
@@ -236,11 +273,14 @@ func (s *Set) SubstitutionMember(head xsd.QName, member xsd.QName) (xsd.Element,
 				typeBlock = headType.Block
 			}
 			for _, method := range methods {
+				if compileOwnerError(owner) != nil {
+					return xsd.Element{}, false
+				}
 				if headDeclaration.Block.Contains(method) || typeBlock.Contains(method) {
 					return xsd.Element{}, false
 				}
 			}
-			return cloneElement(declaration), true
+			return cloneElement(declaration, owner...), true
 		}
 		directDeclaration, exists := s.elements[direct]
 		if !exists || directDeclaration.Block.Contains(xsd.DerivationSubstitution) {
@@ -255,51 +295,77 @@ func setElementTypeDerivationMethods(
 	s *Set,
 	element xsd.Element,
 	base xsd.QName,
+
+	owner ...*compileState,
 ) ([]xsd.Derivation, bool) {
+	if err := compileOwnerError(owner); err != nil {
+		return nil, false
+	}
+
 	if element.InlineComplexType != nil {
-		rest, ok := setTypeDerivationMethods(s, element.InlineComplexType.Base, base)
+		rest, ok := setTypeDerivationMethods(s, element.InlineComplexType.Base, base, owner...)
 		return append([]xsd.Derivation{element.InlineComplexType.Derivation}, rest...), ok
 	}
 	if element.InlineSimpleType != nil {
-		rest, ok := setTypeDerivationMethods(s, element.InlineSimpleType.Base, base)
+		rest, ok := setTypeDerivationMethods(s, element.InlineSimpleType.Base, base, owner...)
 		return append([]xsd.Derivation{xsd.DerivationRestriction}, rest...), ok
 	}
-	return setTypeDerivationMethods(s, element.Type, base)
+	return setTypeDerivationMethods(s, element.Type, base, owner...)
 }
 
 func setTypeDerivationMethods(
 	s *Set,
 	derived xsd.QName,
 	base xsd.QName,
+
+	owner ...*compileState,
 ) ([]xsd.Derivation, bool) {
+	if err := compileOwnerError(owner); err != nil {
+		return nil, false
+	}
+
 	state := compileState{simpleTypes: s.simpleTypes, complexTypes: s.complexTypes}
+	if len(owner) != 0 {
+		state.ctx = owner[0].ctx
+	}
 	return state.typeDerivationMethods(derived, base)
 }
 
-func cloneAttributeGroup(group xsd.AttributeGroup) xsd.AttributeGroup {
-	group.Attributes = cloneAttributeUses(group.Attributes)
+func cloneAttributeGroup(group xsd.AttributeGroup, owner ...*compileState) xsd.AttributeGroup {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.AttributeGroup{}
+	}
+
+	group.Attributes = cloneAttributeUses(group.Attributes, owner...)
 	group.References = append([]xsd.QName(nil), group.References...)
 	group.AttributeGroupReferences = append(
 		[]xsd.AttributeGroupReference(nil),
 		group.AttributeGroupReferences...,
 	)
 	for index := range group.AttributeGroupReferences {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.AttributeGroup{}
+		}
 		group.AttributeGroupReferences[index].Annotation = cloneAnnotation(
 			group.AttributeGroupReferences[index].Annotation,
-		)
+			owner...)
 	}
-	group.Wildcard = cloneWildcard(group.Wildcard)
-	group.Annotation = cloneAnnotation(group.Annotation)
+	group.Wildcard = cloneWildcard(group.Wildcard, owner...)
+	group.Annotation = cloneAnnotation(group.Annotation, owner...)
 	return group
 }
 
-func cloneWildcard(wildcard *xsd.Wildcard) *xsd.Wildcard {
+func cloneWildcard(wildcard *xsd.Wildcard, owner ...*compileState) *xsd.Wildcard {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	if wildcard == nil {
 		return nil
 	}
 	clone := *wildcard
 	clone.Namespaces = append([]string(nil), wildcard.Namespaces...)
-	clone.Annotation = cloneAnnotation(wildcard.Annotation)
+	clone.Annotation = cloneAnnotation(wildcard.Annotation, owner...)
 	return &clone
 }
 
@@ -333,45 +399,62 @@ func (s *Set) Element(name xsd.QName) (xsd.Element, bool) {
 	return cloneElement(element), true
 }
 
-func cloneElement(element xsd.Element) xsd.Element {
-	element.Annotation = cloneAnnotation(element.Annotation)
-	element.ValueNamespaces = cloneNamespaceMap(element.ValueNamespaces)
+func cloneElement(element xsd.Element, owner ...*compileState) xsd.Element {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.Element{}
+	}
+
+	element.Annotation = cloneAnnotation(element.Annotation, owner...)
+	element.ValueNamespaces = cloneNamespaceMap(element.ValueNamespaces, owner...)
 	constraints := element.IdentityConstraints
 	element.IdentityConstraints = make(
 		[]xsd.IdentityConstraint,
 		len(constraints),
 	)
 	for index, constraint := range constraints {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.Element{}
+		}
 		constraint.Fields = append([]string(nil), constraint.Fields...)
 		constraint.FieldIDs = append([]string(nil), constraint.FieldIDs...)
-		constraint.Namespaces = cloneNamespaceMap(constraint.Namespaces)
-		constraint.Annotation = cloneAnnotation(constraint.Annotation)
-		constraint.SelectorAnnotation = cloneAnnotation(constraint.SelectorAnnotation)
+		constraint.Namespaces = cloneNamespaceMap(constraint.Namespaces, owner...)
+		constraint.Annotation = cloneAnnotation(constraint.Annotation, owner...)
+		constraint.SelectorAnnotation = cloneAnnotation(constraint.SelectorAnnotation, owner...)
 		constraint.FieldAnnotations = append(
 			[]*xsd.Annotation(nil),
 			constraint.FieldAnnotations...,
 		)
 		for fieldIndex := range constraint.FieldAnnotations {
+			if err := compileOwnerError(owner); err != nil {
+				return xsd.Element{}
+			}
 			constraint.FieldAnnotations[fieldIndex] = cloneAnnotation(
 				constraint.FieldAnnotations[fieldIndex],
-			)
+				owner...)
 		}
 		element.IdentityConstraints[index] = constraint
 	}
 	if element.InlineSimpleType != nil {
-		typeDefinition := cloneSimpleType(*element.InlineSimpleType)
+		typeDefinition := cloneSimpleType(*element.InlineSimpleType, owner...)
 		element.InlineSimpleType = &typeDefinition
 	}
 	if element.InlineComplexType != nil {
-		typeDefinition := cloneComplexType(*element.InlineComplexType)
+		typeDefinition := cloneComplexType(*element.InlineComplexType, owner...)
 		element.InlineComplexType = &typeDefinition
 	}
 	return element
 }
 
-func cloneNamespaceMap(namespaces map[string]string) map[string]string {
+func cloneNamespaceMap(namespaces map[string]string, owner ...*compileState) map[string]string {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	clone := make(map[string]string, len(namespaces))
 	for prefix, namespace := range namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		clone[prefix] = namespace
 	}
 	return clone
@@ -386,24 +469,35 @@ func (s *Set) Attribute(name xsd.QName) (xsd.Attribute, bool) {
 	return cloneAttribute(attribute), true
 }
 
-func cloneAttribute(attribute xsd.Attribute) xsd.Attribute {
-	attribute.Annotation = cloneAnnotation(attribute.Annotation)
-	attribute.ValueNamespaces = cloneNamespaceMap(attribute.ValueNamespaces)
+func cloneAttribute(attribute xsd.Attribute, owner ...*compileState) xsd.Attribute {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.Attribute{}
+	}
+
+	attribute.Annotation = cloneAnnotation(attribute.Annotation, owner...)
+	attribute.ValueNamespaces = cloneNamespaceMap(attribute.ValueNamespaces, owner...)
 	if attribute.InlineSimpleType != nil {
-		typeDefinition := cloneSimpleType(*attribute.InlineSimpleType)
+		typeDefinition := cloneSimpleType(*attribute.InlineSimpleType, owner...)
 		attribute.InlineSimpleType = &typeDefinition
 	}
 	return attribute
 }
 
-func cloneAttributeUses(attributes []xsd.AttributeUse) []xsd.AttributeUse {
+func cloneAttributeUses(attributes []xsd.AttributeUse, owner ...*compileState) []xsd.AttributeUse {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	clone := make([]xsd.AttributeUse, len(attributes))
 	for index, attribute := range attributes {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		clone[index] = attribute
-		clone[index].ValueNamespaces = cloneNamespaceMap(attribute.ValueNamespaces)
-		clone[index].Annotation = cloneAnnotation(attribute.Annotation)
+		clone[index].ValueNamespaces = cloneNamespaceMap(attribute.ValueNamespaces, owner...)
+		clone[index].Annotation = cloneAnnotation(attribute.Annotation, owner...)
 		if attribute.InlineSimpleType != nil {
-			typeDefinition := cloneSimpleType(*attribute.InlineSimpleType)
+			typeDefinition := cloneSimpleType(*attribute.InlineSimpleType, owner...)
 			clone[index].InlineSimpleType = &typeDefinition
 		}
 	}
@@ -419,30 +513,40 @@ func (s *Set) SimpleType(name xsd.QName) (xsd.SimpleType, bool) {
 	return cloneSimpleType(simpleType), true
 }
 
-func cloneSimpleType(simpleType xsd.SimpleType) xsd.SimpleType {
-	simpleType.Annotation = cloneAnnotation(simpleType.Annotation)
-	simpleType.VarietyAnnotation = cloneAnnotation(simpleType.VarietyAnnotation)
+func cloneSimpleType(simpleType xsd.SimpleType, owner ...*compileState) xsd.SimpleType {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.SimpleType{}
+	}
+
+	simpleType.Annotation = cloneAnnotation(simpleType.Annotation, owner...)
+	simpleType.VarietyAnnotation = cloneAnnotation(simpleType.VarietyAnnotation, owner...)
 	simpleType.Facets = append([]xsd.Facet(nil), simpleType.Facets...)
 	for index := range simpleType.Facets {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.SimpleType{}
+		}
 		simpleType.Facets[index].Namespaces = cloneNamespaceMap(
 			simpleType.Facets[index].Namespaces,
-		)
+			owner...)
 		simpleType.Facets[index].Annotation = cloneAnnotation(
 			simpleType.Facets[index].Annotation,
-		)
+			owner...)
 	}
 	simpleType.MemberTypes = append([]xsd.QName(nil), simpleType.MemberTypes...)
 	if simpleType.InlineBase != nil {
-		base := cloneSimpleType(*simpleType.InlineBase)
+		base := cloneSimpleType(*simpleType.InlineBase, owner...)
 		simpleType.InlineBase = &base
 	}
 	if simpleType.InlineItem != nil {
-		item := cloneSimpleType(*simpleType.InlineItem)
+		item := cloneSimpleType(*simpleType.InlineItem, owner...)
 		simpleType.InlineItem = &item
 	}
 	simpleType.InlineMembers = append([]xsd.SimpleType(nil), simpleType.InlineMembers...)
 	for index := range simpleType.InlineMembers {
-		simpleType.InlineMembers[index] = cloneSimpleType(simpleType.InlineMembers[index])
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.SimpleType{}
+		}
+		simpleType.InlineMembers[index] = cloneSimpleType(simpleType.InlineMembers[index], owner...)
 	}
 	return simpleType
 }
@@ -456,25 +560,32 @@ func (s *Set) ComplexType(name xsd.QName) (xsd.ComplexType, bool) {
 	return cloneComplexType(complexType), true
 }
 
-func cloneComplexType(complexType xsd.ComplexType) xsd.ComplexType {
-	complexType.Annotation = cloneAnnotation(complexType.Annotation)
-	complexType.ContentAnnotation = cloneAnnotation(complexType.ContentAnnotation)
-	complexType.DerivationAnnotation = cloneAnnotation(complexType.DerivationAnnotation)
+func cloneComplexType(complexType xsd.ComplexType, owner ...*compileState) xsd.ComplexType {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.ComplexType{}
+	}
+
+	complexType.Annotation = cloneAnnotation(complexType.Annotation, owner...)
+	complexType.ContentAnnotation = cloneAnnotation(complexType.ContentAnnotation, owner...)
+	complexType.DerivationAnnotation = cloneAnnotation(complexType.DerivationAnnotation, owner...)
 	if complexType.InlineSimpleType != nil {
-		typeDefinition := cloneSimpleType(*complexType.InlineSimpleType)
+		typeDefinition := cloneSimpleType(*complexType.InlineSimpleType, owner...)
 		complexType.InlineSimpleType = &typeDefinition
 	}
 	complexType.SimpleFacets = append([]xsd.Facet(nil), complexType.SimpleFacets...)
 	for index := range complexType.SimpleFacets {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.ComplexType{}
+		}
 		complexType.SimpleFacets[index].Namespaces = cloneNamespaceMap(
 			complexType.SimpleFacets[index].Namespaces,
-		)
+			owner...)
 		complexType.SimpleFacets[index].Annotation = cloneAnnotation(
 			complexType.SimpleFacets[index].Annotation,
-		)
+			owner...)
 	}
-	complexType.Attributes = cloneAttributeUses(complexType.Attributes)
-	complexType.Content = cloneModelGroup(complexType.Content)
+	complexType.Attributes = cloneAttributeUses(complexType.Attributes, owner...)
+	complexType.Content = cloneModelGroup(complexType.Content, owner...)
 	complexType.AttributeGroupRefs = append(
 		[]xsd.QName(nil),
 		complexType.AttributeGroupRefs...,
@@ -484,15 +595,22 @@ func cloneComplexType(complexType xsd.ComplexType) xsd.ComplexType {
 		complexType.AttributeGroupReferences...,
 	)
 	for index := range complexType.AttributeGroupReferences {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.ComplexType{}
+		}
 		complexType.AttributeGroupReferences[index].Annotation = cloneAnnotation(
 			complexType.AttributeGroupReferences[index].Annotation,
-		)
+			owner...)
 	}
-	complexType.AttributeWildcard = cloneWildcard(complexType.AttributeWildcard)
+	complexType.AttributeWildcard = cloneWildcard(complexType.AttributeWildcard, owner...)
 	return complexType
 }
 
-func cloneModelGroup(group *xsd.ModelGroup) *xsd.ModelGroup {
+func cloneModelGroup(group *xsd.ModelGroup, owner ...*compileState) *xsd.ModelGroup {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	if group == nil {
 		return nil
 	}
@@ -502,23 +620,33 @@ func cloneModelGroup(group *xsd.ModelGroup) *xsd.ModelGroup {
 		MaxOccurs:  group.MaxOccurs,
 		Unbounded:  group.Unbounded,
 		OccursSet:  group.OccursSet,
-		Annotation: cloneAnnotation(group.Annotation),
+		Annotation: cloneAnnotation(group.Annotation, owner...),
+	}
+	if !admitParticleCopies(len(group.Particles), owner) {
+		return nil
 	}
 	clone.Particles = make([]xsd.Particle, len(group.Particles))
 	for index, particle := range group.Particles {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		clone.Particles[index] = particle
-		clone.Particles[index].Annotation = cloneAnnotation(particle.Annotation)
+		clone.Particles[index].Annotation = cloneAnnotation(particle.Annotation, owner...)
 		if particle.Element != nil {
-			element := cloneElement(*particle.Element)
+			element := cloneElement(*particle.Element, owner...)
 			clone.Particles[index].Element = &element
 		}
-		clone.Particles[index].Group = cloneModelGroup(particle.Group)
-		clone.Particles[index].Wildcard = cloneWildcard(particle.Wildcard)
+		clone.Particles[index].Group = cloneModelGroup(particle.Group, owner...)
+		clone.Particles[index].Wildcard = cloneWildcard(particle.Wildcard, owner...)
 	}
 	return clone
 }
 
-func cloneAnnotation(annotation *xsd.Annotation) *xsd.Annotation {
+func cloneAnnotation(annotation *xsd.Annotation, owner ...*compileState) *xsd.Annotation {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	if annotation == nil {
 		return nil
 	}
@@ -528,13 +656,35 @@ func cloneAnnotation(annotation *xsd.Annotation) *xsd.Annotation {
 	return &clone
 }
 
-func cloneDocument(document Document) Document {
+func cloneDocument(document Document, owner ...*compileState) Document {
+	if err := compileOwnerError(owner); err != nil {
+		return Document{}
+	}
+
 	document.Dependencies = append([]string(nil), document.Dependencies...)
 	return document
 }
 
 // Compile parses and resolves a complete bounded schema graph.
-func (c *Compiler) Compile(ctx context.Context, root Source) (*Set, error) {
+func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err error) {
+	defer func() {
+		if err != nil {
+			set = nil
+			err = errsafe.Wrap("xsd compile: failed", err)
+		}
+	}()
+	defer func() {
+		if ctx != nil {
+			if canceled := ctx.Err(); canceled != nil {
+				set, err = nil, canceled
+			}
+		}
+	}()
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateIdentity(root.URI); err != nil {
 		return nil, err
 	}
@@ -542,6 +692,7 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (*Set, error) {
 		return nil, fmt.Errorf("%w: schema bytes exceed %d", ErrLimitExceeded, c.limits.MaxBytes)
 	}
 	state := compileState{
+		ctx:               ctx,
 		compiler:          c,
 		resources:         map[string]resourceDocument{},
 		instances:         map[instanceKey]*Document{},
@@ -556,9 +707,16 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (*Set, error) {
 		typeKinds:         map[xsd.QName]string{},
 		bytes:             int64(len(root.Content)),
 	}
+	defer func() {
+		if stopped := state.contextError(); stopped != nil {
+			set, err = nil, stopped
+		}
+	}()
 	document, err := xsd.Parse(ctx, root.Content, xsd.ParseOptions{
-		SystemID:         root.URI,
-		MaxDocumentBytes: c.limits.MaxBytes,
+		SystemID:            root.URI,
+		MaxDocumentBytes:    c.limits.MaxBytes,
+		MaxNamespaceEntries: c.limits.MaxParseNamespaceEntries,
+		MaxModelBytes:       c.limits.MaxParseModelBytes,
 	})
 	if err != nil {
 		return nil, err
@@ -585,11 +743,17 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (*Set, error) {
 
 	documents := make([]Document, 0, len(state.instances))
 	for _, document := range state.instances {
-		documents = append(documents, cloneDocument(*document))
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		documents = append(documents, cloneDocument(*document, &state))
 	}
 	sort.Slice(documents, func(left, right int) bool {
 		return documentLess(documents[left], documents[right])
 	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return &Set{
 		documents:         documents,
 		elements:          state.elements,
@@ -631,7 +795,14 @@ var builtInTypes = map[string]string{
 }
 
 func (s *compileState) compileSubstitutions() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	for member, declaration := range s.elements {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if declaration.SubstitutionGroup.Local == "" {
 			continue
 		}
@@ -642,6 +813,9 @@ func (s *compileState) compileSubstitutions() error {
 	}
 	colors := make(map[xsd.QName]uint8, len(s.substitutionHeads))
 	for member := range s.substitutionHeads {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.validateSubstitution(member, colors); err != nil {
 			return err
 		}
@@ -653,6 +827,10 @@ func (s *compileState) validateSubstitution(
 	member xsd.QName,
 	colors map[xsd.QName]uint8,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	switch colors[member] {
 	case 1:
 		return invalidComponent("element", member, "substitution affiliation is recursive")
@@ -683,6 +861,9 @@ func (s *compileState) validateSubstitution(
 		)
 	}
 	for _, method := range methods {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if headDeclaration.Final.Contains(method) {
 			return invalidComponent("element", member, "head excludes the type derivation method")
 		}
@@ -695,6 +876,10 @@ func (s *compileState) elementTypeDerivationMethods(
 	element xsd.Element,
 	head xsd.QName,
 ) ([]xsd.Derivation, bool) {
+	if err := s.contextError(); err != nil {
+		return nil, false
+	}
+
 	if element.InlineComplexType != nil {
 		methods := []xsd.Derivation{element.InlineComplexType.Derivation}
 		rest, ok := s.typeDerivationMethods(element.InlineComplexType.Base, head)
@@ -715,12 +900,19 @@ func (s *compileState) typeDerivationMethods(
 	derived xsd.QName,
 	base xsd.QName,
 ) ([]xsd.Derivation, bool) {
+	if err := s.contextError(); err != nil {
+		return nil, false
+	}
+
 	if base.Local == "" || base == (xsd.QName{Namespace: xsd.Namespace, Local: "anyType"}) {
 		return nil, true
 	}
 	methods := make([]xsd.Derivation, 0)
 	seen := make(map[xsd.QName]struct{})
 	for derived != base {
+		if err := s.contextError(); err != nil {
+			return nil, false
+		}
 		if _, duplicate := seen[derived]; duplicate {
 			return nil, false
 		}
@@ -756,19 +948,32 @@ func (s *compileState) typeDerivationMethods(
 }
 
 func (s *compileState) expandGroups() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	modelColors := make(map[xsd.QName]uint8, len(s.modelGroups))
 	for name := range s.modelGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if _, err := s.expandModelGroup(name, modelColors); err != nil {
 			return err
 		}
 	}
 	attributeColors := make(map[xsd.QName]uint8, len(s.attributeGroups))
 	for name := range s.attributeGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if _, err := s.expandAttributeGroup(name, attributeColors); err != nil {
 			return err
 		}
 	}
 	for name, typeDefinition := range s.complexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		content, err := s.expandModelGroupContent(typeDefinition.Content, modelColors)
 		if err != nil {
 			return err
@@ -776,6 +981,9 @@ func (s *compileState) expandGroups() error {
 		typeDefinition.Content = content
 		wildcardSeen := typeDefinition.AttributeWildcard != nil
 		for _, reference := range typeDefinition.AttributeGroupRefs {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			group, err := s.expandAttributeGroup(reference, attributeColors)
 			if err != nil {
 				return err
@@ -786,9 +994,9 @@ func (s *compileState) expandGroups() error {
 					typeDefinition.AttributeWildcard = intersectWildcards(
 						typeDefinition.AttributeWildcard,
 						group.Wildcard,
-					)
+						s)
 				} else {
-					typeDefinition.AttributeWildcard = cloneWildcard(group.Wildcard)
+					typeDefinition.AttributeWildcard = cloneWildcard(group.Wildcard, s)
 					wildcardSeen = true
 				}
 			}
@@ -803,6 +1011,10 @@ func (s *compileState) expandModelGroup(
 	name xsd.QName,
 	colors map[xsd.QName]uint8,
 ) (xsd.ModelGroupDefinition, error) {
+	if err := s.contextError(); err != nil {
+		return xsd.ModelGroupDefinition{}, err
+	}
+
 	switch colors[name] {
 	case 1:
 		return xsd.ModelGroupDefinition{}, invalidComponent(
@@ -832,18 +1044,25 @@ func (s *compileState) expandModelGroupContent(
 	content *xsd.ModelGroup,
 	colors map[xsd.QName]uint8,
 ) (*xsd.ModelGroup, error) {
-	content = cloneModelGroup(content)
+	if err := s.contextError(); err != nil {
+		return nil, err
+	}
+
+	content = cloneModelGroup(content, s)
 	if content == nil {
 		return nil, nil
 	}
 	for index := range content.Particles {
+		if err := s.contextError(); err != nil {
+			return nil, err
+		}
 		particle := &content.Particles[index]
 		if particle.GroupRef.Local != "" {
 			definition, err := s.expandModelGroup(particle.GroupRef, colors)
 			if err != nil {
 				return nil, err
 			}
-			particle.Group = cloneModelGroup(definition.Content)
+			particle.Group = cloneModelGroup(definition.Content, s)
 			particle.GroupRef = xsd.QName{}
 		} else {
 			nested, err := s.expandModelGroupContent(particle.Group, colors)
@@ -860,6 +1079,10 @@ func (s *compileState) expandAttributeGroup(
 	name xsd.QName,
 	colors map[xsd.QName]uint8,
 ) (xsd.AttributeGroup, error) {
+	if err := s.contextError(); err != nil {
+		return xsd.AttributeGroup{}, err
+	}
+
 	switch colors[name] {
 	case 1:
 		return xsd.AttributeGroup{}, invalidComponent(
@@ -878,6 +1101,9 @@ func (s *compileState) expandAttributeGroup(
 	attributes := append([]xsd.AttributeUse(nil), group.Attributes...)
 	wildcardSeen := group.Wildcard != nil
 	for _, reference := range group.References {
+		if err := s.contextError(); err != nil {
+			return xsd.AttributeGroup{}, err
+		}
 		referenced, err := s.expandAttributeGroup(reference, colors)
 		if err != nil {
 			return xsd.AttributeGroup{}, err
@@ -885,9 +1111,9 @@ func (s *compileState) expandAttributeGroup(
 		attributes = append(attributes, referenced.Attributes...)
 		if referenced.Wildcard != nil {
 			if wildcardSeen {
-				group.Wildcard = intersectWildcards(group.Wildcard, referenced.Wildcard)
+				group.Wildcard = intersectWildcards(group.Wildcard, referenced.Wildcard, s)
 			} else {
-				group.Wildcard = cloneWildcard(referenced.Wildcard)
+				group.Wildcard = cloneWildcard(referenced.Wildcard, s)
 				wildcardSeen = true
 			}
 		}
@@ -900,8 +1126,15 @@ func (s *compileState) expandAttributeGroup(
 }
 
 func (s *compileState) compileComplexExtensions() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	colors := make(map[xsd.QName]uint8, len(s.complexTypes))
 	for name := range s.complexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.compileComplexType(name, colors); err != nil {
 			return err
 		}
@@ -910,13 +1143,23 @@ func (s *compileState) compileComplexExtensions() error {
 }
 
 func (s *compileState) compileAnonymousComplexTypes() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	for name, element := range s.elements {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.compileElementAnonymousType(&element, name.Namespace); err != nil {
 			return err
 		}
 		s.elements[name] = element
 	}
 	for name, typeDefinition := range s.complexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.compileAnonymousTypesInGroup(typeDefinition.Content, name.Namespace); err != nil {
 			return err
 		}
@@ -926,10 +1169,14 @@ func (s *compileState) compileAnonymousComplexTypes() error {
 }
 
 func (s *compileState) compileElementAnonymousType(element *xsd.Element, namespace string) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if element.InlineComplexType == nil {
 		return nil
 	}
-	typeDefinition := cloneComplexType(*element.InlineComplexType)
+	typeDefinition := cloneComplexType(*element.InlineComplexType, s)
 	if err := s.expandAnonymousComplexType(&typeDefinition); err != nil {
 		return err
 	}
@@ -941,6 +1188,10 @@ func (s *compileState) compileElementAnonymousType(element *xsd.Element, namespa
 }
 
 func (s *compileState) expandAnonymousComplexType(typeDefinition *xsd.ComplexType) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	modelColors := make(map[xsd.QName]uint8, len(s.modelGroups))
 	content, err := s.expandModelGroupContent(typeDefinition.Content, modelColors)
 	if err != nil {
@@ -949,6 +1200,9 @@ func (s *compileState) expandAnonymousComplexType(typeDefinition *xsd.ComplexTyp
 	typeDefinition.Content = content
 	attributeColors := make(map[xsd.QName]uint8, len(s.attributeGroups))
 	for _, reference := range typeDefinition.AttributeGroupRefs {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		group, expandErr := s.expandAttributeGroup(reference, attributeColors)
 		if expandErr != nil {
 			return expandErr
@@ -960,9 +1214,9 @@ func (s *compileState) expandAnonymousComplexType(typeDefinition *xsd.ComplexTyp
 				typeDefinition.AttributeWildcard = intersectWildcards(
 					typeDefinition.AttributeWildcard,
 					group.Wildcard,
-				)
+					s)
 			default:
-				typeDefinition.AttributeWildcard = cloneWildcard(group.Wildcard)
+				typeDefinition.AttributeWildcard = cloneWildcard(group.Wildcard, s)
 			}
 		}
 	}
@@ -1015,7 +1269,7 @@ func (s *compileState) expandAnonymousComplexType(typeDefinition *xsd.ComplexTyp
 		typeDefinition.Attributes = restrictedAttributes(
 			base.Attributes,
 			typeDefinition.Attributes,
-		)
+			s)
 		return nil
 	}
 	if !typeDefinition.MixedSet {
@@ -1023,28 +1277,35 @@ func (s *compileState) expandAnonymousComplexType(typeDefinition *xsd.ComplexTyp
 	} else if typeDefinition.Mixed != base.Mixed {
 		return fmt.Errorf("%w: anonymous extension changes the base mixed-content policy", ErrInvalidComponent)
 	}
-	typeDefinition.Content = extendContent(base.Content, typeDefinition.Content)
+	typeDefinition.Content = extendContent(base.Content, typeDefinition.Content, s)
 	typeDefinition.Attributes = append(
 		append([]xsd.AttributeUse(nil), base.Attributes...),
 		typeDefinition.Attributes...,
 	)
 	switch {
 	case typeDefinition.AttributeWildcard == nil:
-		typeDefinition.AttributeWildcard = cloneWildcard(base.AttributeWildcard)
+		typeDefinition.AttributeWildcard = cloneWildcard(base.AttributeWildcard, s)
 	case base.AttributeWildcard != nil:
 		typeDefinition.AttributeWildcard = unionWildcards(
 			base.AttributeWildcard,
 			typeDefinition.AttributeWildcard,
-		)
+			s)
 	}
 	return nil
 }
 
 func (s *compileState) compileAnonymousTypesInGroup(group *xsd.ModelGroup, namespace string) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if group == nil {
 		return nil
 	}
 	for index := range group.Particles {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		particle := &group.Particles[index]
 		if particle.Element != nil {
 			if err := s.compileElementAnonymousType(particle.Element, namespace); err != nil {
@@ -1062,6 +1323,10 @@ func (s *compileState) compileComplexType(
 	name xsd.QName,
 	colors map[xsd.QName]uint8,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	switch colors[name] {
 	case 1:
 		return invalidComponent("complex type", name, "derivation is recursive")
@@ -1069,7 +1334,7 @@ func (s *compileState) compileComplexType(
 		return nil
 	}
 	colors[name] = 1
-	typeDefinition := cloneComplexType(s.complexTypes[name])
+	typeDefinition := cloneComplexType(s.complexTypes[name], s)
 	if typeDefinition.Derivation == "" {
 		colors[name] = 2
 		return nil
@@ -1134,7 +1399,7 @@ func (s *compileState) compileComplexType(
 		typeDefinition.Attributes = restrictedAttributes(
 			base.Attributes,
 			typeDefinition.Attributes,
-		)
+			s)
 		s.complexTypes[name] = typeDefinition
 		colors[name] = 2
 		return nil
@@ -1148,18 +1413,18 @@ func (s *compileState) compileComplexType(
 			"extension changes the base mixed-content policy",
 		)
 	}
-	typeDefinition.Content = extendContent(base.Content, typeDefinition.Content)
+	typeDefinition.Content = extendContent(base.Content, typeDefinition.Content, s)
 	typeDefinition.Attributes = append(
 		append([]xsd.AttributeUse(nil), base.Attributes...),
 		typeDefinition.Attributes...,
 	)
 	if typeDefinition.AttributeWildcard == nil {
-		typeDefinition.AttributeWildcard = cloneWildcard(base.AttributeWildcard)
+		typeDefinition.AttributeWildcard = cloneWildcard(base.AttributeWildcard, s)
 	} else if base.AttributeWildcard != nil {
 		typeDefinition.AttributeWildcard = unionWildcards(
 			base.AttributeWildcard,
 			typeDefinition.AttributeWildcard,
-		)
+			s)
 	}
 	s.complexTypes[name] = typeDefinition
 	colors[name] = 2
@@ -1170,6 +1435,10 @@ func (s *compileState) applySimpleContentDerivation(
 	derived *xsd.ComplexType,
 	base xsd.ComplexType,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if base.Final.Contains(derived.Derivation) {
 		return errors.New("base type prohibits this derivation")
 	}
@@ -1202,7 +1471,7 @@ func (s *compileState) applySimpleContentDerivation(
 				"simple content base must have simple content or emptiable mixed content",
 			)
 		}
-		if !modelGroupNullable(base.Content) {
+		if !modelGroupNullable(base.Content, s) {
 			return errors.New(
 				"simple content base must have simple content or emptiable mixed content",
 			)
@@ -1229,11 +1498,11 @@ func (s *compileState) applySimpleContentDerivation(
 			if base.AttributeWildcard == nil {
 				return errors.New("attribute wildcard is not a valid restriction of its base")
 			}
-			if !wildcardRestricts(derived.AttributeWildcard, base.AttributeWildcard) {
+			if !wildcardRestricts(derived.AttributeWildcard, base.AttributeWildcard, s) {
 				return errors.New("attribute wildcard is not a valid restriction of its base")
 			}
 		}
-		derived.Attributes = restrictedAttributes(base.Attributes, derived.Attributes)
+		derived.Attributes = restrictedAttributes(base.Attributes, derived.Attributes, s)
 		return nil
 	}
 	derived.Attributes = append(
@@ -1241,9 +1510,9 @@ func (s *compileState) applySimpleContentDerivation(
 		derived.Attributes...,
 	)
 	if derived.AttributeWildcard == nil {
-		derived.AttributeWildcard = cloneWildcard(base.AttributeWildcard)
+		derived.AttributeWildcard = cloneWildcard(base.AttributeWildcard, s)
 	} else if base.AttributeWildcard != nil {
-		derived.AttributeWildcard = unionWildcards(base.AttributeWildcard, derived.AttributeWildcard)
+		derived.AttributeWildcard = unionWildcards(base.AttributeWildcard, derived.AttributeWildcard, s)
 	}
 	return nil
 }
@@ -1252,12 +1521,16 @@ func (s *compileState) compileSimpleContentValueType(
 	derived *xsd.ComplexType,
 	inherited *xsd.SimpleType,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if derived.Derivation == xsd.DerivationExtension {
 		if derived.InlineSimpleType != nil || len(derived.SimpleFacets) != 0 {
 			return errors.New("simple-content extension cannot declare facets")
 		}
 		if inherited != nil {
-			typeDefinition := cloneSimpleType(*inherited)
+			typeDefinition := cloneSimpleType(*inherited, s)
 			derived.InlineSimpleType = &typeDefinition
 		}
 		return nil
@@ -1267,10 +1540,10 @@ func (s *compileState) compileSimpleContentValueType(
 		Facets:  append([]xsd.Facet(nil), derived.SimpleFacets...),
 	}
 	if derived.InlineSimpleType != nil {
-		base := cloneSimpleType(*derived.InlineSimpleType)
+		base := cloneSimpleType(*derived.InlineSimpleType, s)
 		restriction.InlineBase = &base
 	} else if inherited != nil {
-		base := cloneSimpleType(*inherited)
+		base := cloneSimpleType(*inherited, s)
 		restriction.InlineBase = &base
 	} else {
 		restriction.Base = derived.SimpleBase
@@ -1284,6 +1557,10 @@ func (s *compileState) compileSimpleContentValueType(
 }
 
 func (s *compileState) validateComplexRestriction(derived, base xsd.ComplexType) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if derived.Mixed && !base.Mixed {
 		return errors.New("restriction enables mixed content")
 	}
@@ -1299,7 +1576,7 @@ func (s *compileState) validateComplexRestriction(derived, base xsd.ComplexType)
 		return errors.New("attribute uses are not a valid restriction of their base")
 	}
 	if derived.AttributeWildcard != nil &&
-		(base.AttributeWildcard == nil || !wildcardRestricts(derived.AttributeWildcard, base.AttributeWildcard)) {
+		(base.AttributeWildcard == nil || !wildcardRestricts(derived.AttributeWildcard, base.AttributeWildcard, s)) {
 		return errors.New("attribute wildcard is not a valid restriction of its base")
 	}
 	return nil
@@ -1310,8 +1587,12 @@ func modelGroupRestricts(derived, base *xsd.ModelGroup) bool {
 }
 
 func (s *compileState) modelGroupRestricts(derived, base *xsd.ModelGroup) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if derived == nil {
-		return base == nil || modelGroupNullable(base)
+		return base == nil || modelGroupNullable(base, s)
 	}
 	if base == nil || derived.Compositor != base.Compositor {
 		return false
@@ -1321,9 +1602,12 @@ func (s *compileState) modelGroupRestricts(derived, base *xsd.ModelGroup) bool {
 	case xsd.Sequence:
 		baseIndex := 0
 		for _, particle := range derived.Particles {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			for baseIndex < len(base.Particles) &&
 				!s.particleRestricts(particle, base.Particles[baseIndex]) {
-				if !particleNullable(base.Particles[baseIndex]) {
+				if !particleNullable(base.Particles[baseIndex], s) {
 					return false
 				}
 				baseIndex++
@@ -1334,19 +1618,28 @@ func (s *compileState) modelGroupRestricts(derived, base *xsd.ModelGroup) bool {
 			baseIndex++
 		}
 		for ; baseIndex < len(base.Particles); baseIndex++ {
-			if !particleNullable(base.Particles[baseIndex]) {
+			if err := s.contextError(); err != nil {
+				return false
+			}
+			if !particleNullable(base.Particles[baseIndex], s) {
 				return false
 			}
 		}
 		return true
 	case xsd.Choice, xsd.All:
 		for _, particle := range derived.Particles {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			if !s.particleRestrictsAny(particle, base.Particles) {
 				return false
 			}
 		}
 		if derived.Compositor == xsd.All {
 			for _, baseParticle := range base.Particles {
+				if err := s.contextError(); err != nil {
+					return false
+				}
 				if baseParticle.MinOccurs != 0 && !s.anyParticleRestrictsBase(derived.Particles, baseParticle) {
 					return false
 				}
@@ -1359,7 +1652,14 @@ func (s *compileState) modelGroupRestricts(derived, base *xsd.ModelGroup) bool {
 }
 
 func (s *compileState) particleRestrictsAny(derived xsd.Particle, candidates []xsd.Particle) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	for _, candidate := range candidates {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		if s.particleRestricts(derived, candidate) {
 			return true
 		}
@@ -1368,7 +1668,14 @@ func (s *compileState) particleRestrictsAny(derived xsd.Particle, candidates []x
 }
 
 func (s *compileState) anyParticleRestrictsBase(candidates []xsd.Particle, base xsd.Particle) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	for _, candidate := range candidates {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		if s.particleRestricts(candidate, base) {
 			return true
 		}
@@ -1376,20 +1683,29 @@ func (s *compileState) anyParticleRestrictsBase(candidates []xsd.Particle, base 
 	return false
 }
 
-func modelGroupNullable(group *xsd.ModelGroup) bool {
+func modelGroupNullable(group *xsd.ModelGroup, owner ...*compileState) bool {
+	if compileOwnerError(owner) != nil {
+		return false
+	}
 	if group == nil || len(group.Particles) == 0 {
 		return true
 	}
 	if group.Compositor == xsd.Choice {
 		for _, particle := range group.Particles {
-			if particleNullable(particle) {
+			if compileOwnerError(owner) != nil {
+				return false
+			}
+			if particleNullable(particle, owner...) {
 				return true
 			}
 		}
 		return false
 	}
 	for _, particle := range group.Particles {
-		if !particleNullable(particle) {
+		if compileOwnerError(owner) != nil {
+			return false
+		}
+		if !particleNullable(particle, owner...) {
 			return false
 		}
 	}
@@ -1401,6 +1717,10 @@ func particleRestricts(derived, base xsd.Particle) bool {
 }
 
 func (s *compileState) particleRestricts(derived, base xsd.Particle) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if derived.MinOccurs < base.MinOccurs {
 		return false
 	}
@@ -1421,7 +1741,7 @@ func (s *compileState) particleRestricts(derived, base xsd.Particle) bool {
 	}
 	if derived.Wildcard != nil {
 		if base.Wildcard != nil {
-			return wildcardRestricts(derived.Wildcard, base.Wildcard)
+			return wildcardRestricts(derived.Wildcard, base.Wildcard, s)
 		}
 		return false
 	}
@@ -1433,6 +1753,10 @@ func elementTermEqual(derived, base xsd.Element) bool {
 }
 
 func (s *compileState) elementTermRestricts(derived, base xsd.Element) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if derived.Ref.Local != "" {
 		return derived.Ref == base.Ref
 	}
@@ -1466,6 +1790,10 @@ func (s *compileState) attributesRestrict(
 	base []xsd.AttributeUse,
 	baseWildcard *xsd.Wildcard,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.attributesRestrictContext(derived, base, baseWildcard, "")
 }
 
@@ -1475,11 +1803,21 @@ func (s *compileState) attributesRestrictContext(
 	baseWildcard *xsd.Wildcard,
 	targetNamespace string,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	uses := make(map[xsd.QName]xsd.AttributeUse, len(derived))
 	for _, attribute := range derived {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		uses[attributeUseName(attribute)] = attribute
 	}
 	for _, baseAttribute := range base {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		attribute, ok := uses[attributeUseName(baseAttribute)]
 		if !ok {
 			if baseAttribute.Use == xsd.AttributeRequired {
@@ -1504,8 +1842,11 @@ func (s *compileState) attributesRestrictContext(
 		}
 	}
 	for name, attribute := range uses {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		if attribute.Use != xsd.AttributeProhibited &&
-			!wildcardAllows(baseWildcard, name.Namespace, targetNamespace) {
+			!wildcardAllows(baseWildcard, name.Namespace, targetNamespace, s) {
 			return false
 		}
 	}
@@ -1516,6 +1857,10 @@ func (s *compileState) attributeUseTypeRestricts(
 	derived xsd.AttributeUse,
 	base xsd.AttributeUse,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if derived.Ref.Local != "" {
 		if derived.Ref == base.Ref {
 			_, ok := s.attributes[derived.Ref]
@@ -1537,6 +1882,10 @@ func (s *compileState) attributeUseTypeRestricts(
 func (s *compileState) attributeUseType(
 	attribute xsd.AttributeUse,
 ) (xsd.QName, *xsd.SimpleType, bool) {
+	if err := s.contextError(); err != nil {
+		return xsd.QName{}, nil, false
+	}
+
 	if attribute.Ref.Local != "" {
 		declaration, ok := s.attributes[attribute.Ref]
 		if !ok {
@@ -1564,6 +1913,10 @@ func (s *compileState) attributeUseType(
 func (s *compileState) attributeUseFixedConstraint(
 	attribute xsd.AttributeUse,
 ) (string, bool) {
+	if err := s.contextError(); err != nil {
+		return "", false
+	}
+
 	if attributeFixedSet(attribute) {
 		return attribute.Fixed, true
 	}
@@ -1578,11 +1931,18 @@ func (s *compileState) attributeUseFixedConstraint(
 }
 
 func (s *compileState) simpleTypeDerivesFrom(derived, base xsd.QName) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if base.Local == "" || base == (xsd.QName{Namespace: xsd.Namespace, Local: "anySimpleType"}) {
 		return derived.Local != ""
 	}
 	seen := make(map[xsd.QName]struct{})
 	for derived.Local != "" {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		if derived == base {
 			return true
 		}
@@ -1606,13 +1966,23 @@ func (s *compileState) simpleTypeDerivesFrom(derived, base xsd.QName) bool {
 	return false
 }
 
-func restrictedAttributes(base, derived []xsd.AttributeUse) []xsd.AttributeUse {
+func restrictedAttributes(base, derived []xsd.AttributeUse, owner ...*compileState) []xsd.AttributeUse {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	result := append([]xsd.AttributeUse(nil), base...)
 	indexes := make(map[xsd.QName]int, len(result))
 	for index, attribute := range result {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		indexes[attributeUseName(attribute)] = index
 	}
 	for _, attribute := range derived {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		name := attributeUseName(attribute)
 		if index, ok := indexes[name]; ok {
 			result[index] = attribute
@@ -1631,16 +2001,26 @@ func attributeUseName(attribute xsd.AttributeUse) xsd.QName {
 	return xsd.QName{Namespace: attribute.Namespace, Local: attribute.Name}
 }
 
-func wildcardRestricts(derived, base *xsd.Wildcard) bool {
+func wildcardRestricts(derived, base *xsd.Wildcard, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	if derived.ProcessContents == xsd.ProcessSkip && base.ProcessContents != xsd.ProcessSkip ||
 		derived.ProcessContents == xsd.ProcessLax && base.ProcessContents == xsd.ProcessStrict {
 		return false
 	}
 	baseNamespaces := make(map[string]struct{}, len(base.Namespaces))
 	for _, namespace := range base.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		baseNamespaces[namespace] = struct{}{}
 	}
 	for _, namespace := range derived.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		if _, ok := baseNamespaces[namespace]; !ok {
 			return false
 		}
@@ -1648,19 +2028,29 @@ func wildcardRestricts(derived, base *xsd.Wildcard) bool {
 	return true
 }
 
-func intersectWildcards(left, right *xsd.Wildcard) *xsd.Wildcard {
-	if wildcardHas(left, "##any") {
-		return cloneWildcard(right)
+func intersectWildcards(left, right *xsd.Wildcard, owner ...*compileState) *xsd.Wildcard {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
 	}
-	if wildcardHas(right, "##any") {
-		return cloneWildcard(left)
+
+	if wildcardHas(left, "##any", owner...) {
+		return cloneWildcard(right, owner...)
+	}
+	if wildcardHas(right, "##any", owner...) {
+		return cloneWildcard(left, owner...)
 	}
 	rightNamespaces := make(map[string]struct{}, len(right.Namespaces))
 	for _, namespace := range right.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		rightNamespaces[namespace] = struct{}{}
 	}
 	namespaces := make([]string, 0)
 	for _, namespace := range left.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		if _, ok := rightNamespaces[namespace]; ok {
 			namespaces = append(namespaces, namespace)
 		}
@@ -1674,14 +2064,18 @@ func intersectWildcards(left, right *xsd.Wildcard) *xsd.Wildcard {
 	}
 }
 
-func unionWildcards(left, right *xsd.Wildcard) *xsd.Wildcard {
-	if wildcardHas(left, "##any") {
+func unionWildcards(left, right *xsd.Wildcard, owner ...*compileState) *xsd.Wildcard {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
+	if wildcardHas(left, "##any", owner...) {
 		return &xsd.Wildcard{
 			Namespaces:      []string{"##any"},
 			ProcessContents: weakerProcessContents(left.ProcessContents, right.ProcessContents),
 		}
 	}
-	if wildcardHas(right, "##any") {
+	if wildcardHas(right, "##any", owner...) {
 		return &xsd.Wildcard{
 			Namespaces:      []string{"##any"},
 			ProcessContents: weakerProcessContents(left.ProcessContents, right.ProcessContents),
@@ -1690,9 +2084,15 @@ func unionWildcards(left, right *xsd.Wildcard) *xsd.Wildcard {
 	namespaces := append([]string(nil), left.Namespaces...)
 	seen := make(map[string]struct{}, len(namespaces))
 	for _, namespace := range namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		seen[namespace] = struct{}{}
 	}
 	for _, namespace := range right.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		if _, ok := seen[namespace]; !ok {
 			namespaces = append(namespaces, namespace)
 			seen[namespace] = struct{}{}
@@ -1704,8 +2104,15 @@ func unionWildcards(left, right *xsd.Wildcard) *xsd.Wildcard {
 	}
 }
 
-func wildcardHas(wildcard *xsd.Wildcard, namespace string) bool {
+func wildcardHas(wildcard *xsd.Wildcard, namespace string, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	for _, candidate := range wildcard.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		if candidate == namespace {
 			return true
 		}
@@ -1752,27 +2159,41 @@ func processContentsRank(value xsd.ProcessContents) int {
 	}
 }
 
-func extendContent(base *xsd.ModelGroup, extension *xsd.ModelGroup) *xsd.ModelGroup {
+func extendContent(base *xsd.ModelGroup, extension *xsd.ModelGroup, owner ...*compileState) *xsd.ModelGroup {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	if base == nil {
-		return cloneModelGroup(extension)
+		return cloneModelGroup(extension, owner...)
 	}
 	if extension == nil {
-		return cloneModelGroup(base)
+		return cloneModelGroup(base, owner...)
+	}
+	if !admitParticleCopies(2, owner) {
+		return nil
 	}
 	return &xsd.ModelGroup{
 		Compositor: xsd.Sequence,
 		Particles: []xsd.Particle{
-			{MinOccurs: 1, MaxOccurs: 1, Group: cloneModelGroup(base)},
-			{MinOccurs: 1, MaxOccurs: 1, Group: cloneModelGroup(extension)},
+			{MinOccurs: 1, MaxOccurs: 1, Group: cloneModelGroup(base, owner...)},
+			{MinOccurs: 1, MaxOccurs: 1, Group: cloneModelGroup(extension, owner...)},
 		},
 	}
 }
 
 func (s *compileState) validateComponents() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if err := s.validateIdentityConstraints(); err != nil {
 		return err
 	}
 	for name, element := range s.elements {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if elementDefaultSet(element) && elementFixedSet(element) {
 			return invalidComponent("element", name, "default and fixed are mutually exclusive")
 		}
@@ -1793,6 +2214,9 @@ func (s *compileState) validateComponents() error {
 		}
 	}
 	for name, attribute := range s.attributes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if attributeDeclarationDefaultSet(attribute) && attributeDeclarationFixedSet(attribute) {
 			return invalidComponent("attribute", name, "default and fixed are mutually exclusive")
 		}
@@ -1819,6 +2243,9 @@ func (s *compileState) validateComponents() error {
 		}
 	}
 	for name, simpleType := range s.simpleTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if datatype.ValidateBuiltInLexical("NCName", simpleType.Name) != nil {
 			return invalidComponent("simple type", name, "name is not an NCName")
 		}
@@ -1828,23 +2255,35 @@ func (s *compileState) validateComponents() error {
 	}
 	colors := make(map[xsd.QName]uint8, len(s.simpleTypes))
 	for name := range s.simpleTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.validateSimpleTypeAcyclic(name, colors); err != nil {
 			return err
 		}
 	}
 	particles := 0
 	for name, element := range s.elements {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.validateAnonymousElementType(element, name.Namespace, &particles); err != nil {
 			return err
 		}
 	}
 	for _, group := range s.modelGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.validateModelGroup(group.Content, "", &particles); err != nil {
 			return err
 		}
 	}
 	for _, group := range s.attributeGroups {
-		if err := validateWildcard(group.Wildcard); err != nil {
+		if err := s.contextError(); err != nil {
+			return err
+		}
+		if err := validateWildcard(group.Wildcard, s); err != nil {
 			return err
 		}
 		if err := s.validateAttributeUseSet(group.Attributes); err != nil {
@@ -1852,13 +2291,19 @@ func (s *compileState) validateComponents() error {
 		}
 	}
 	for name, complexType := range s.complexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := s.validateModelGroup(complexType.Content, name.Namespace, &particles); err != nil {
 			return err
 		}
-		if err := validateWildcard(complexType.AttributeWildcard); err != nil {
+		if err := validateWildcard(complexType.AttributeWildcard, s); err != nil {
 			return err
 		}
 		for _, attribute := range complexType.Attributes {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			if err := s.validateAttributeUse(attribute, name.Namespace); err != nil {
 				return err
 			}
@@ -1875,6 +2320,10 @@ func (s *compileState) validateAnonymousElementType(
 	namespace string,
 	particles *int,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	typeCount := 0
 	if element.Type.Local != "" {
 		typeCount++
@@ -1904,6 +2353,9 @@ func (s *compileState) validateAnonymousElementType(
 				return err
 			}
 			for _, attribute := range element.InlineComplexType.Attributes {
+				if err := s.contextError(); err != nil {
+					return err
+				}
 				if err := s.validateAttributeUse(attribute, namespace); err != nil {
 					return err
 				}
@@ -1920,10 +2372,17 @@ func (s *compileState) validateAnonymousElementType(
 }
 
 func (s *compileState) validateAttributeUseSet(attributes []xsd.AttributeUse) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	seen := make(map[xsd.QName]struct{}, len(attributes))
 	idSeen := false
 	id := xsd.QName{Namespace: xsd.Namespace, Local: "ID"}
 	for _, attribute := range attributes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name := attributeUseName(attribute)
 		if _, duplicate := seen[name]; duplicate {
 			return fmt.Errorf(
@@ -1959,6 +2418,10 @@ func (s *compileState) validateAttributeUseSet(attributes []xsd.AttributeUse) er
 }
 
 func (s *compileState) validateSimpleTypeDefinition(typeDefinition xsd.SimpleType) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	switch typeDefinition.Variety {
 	case xsd.SimpleRestriction:
 		if typeDefinition.Base.Local != "" && typeDefinition.InlineBase != nil {
@@ -2014,6 +2477,9 @@ func (s *compileState) validateSimpleTypeDefinition(typeDefinition xsd.SimpleTyp
 			return fmt.Errorf("%w: anonymous union has no member types", ErrInvalidComponent)
 		}
 		for _, member := range typeDefinition.MemberTypes {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			if !s.typeExists(member, "simple") {
 				return unresolvedComponent("simple type", member)
 			}
@@ -2026,6 +2492,9 @@ func (s *compileState) validateSimpleTypeDefinition(typeDefinition xsd.SimpleTyp
 			}
 		}
 		for _, member := range typeDefinition.InlineMembers {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			if err := s.validateSimpleTypeDefinition(member); err != nil {
 				return err
 			}
@@ -2037,9 +2506,16 @@ func (s *compileState) validateSimpleTypeDefinition(typeDefinition xsd.SimpleTyp
 }
 
 func (s *compileState) validateIdentityConstraints() error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	constraints := make(map[xsd.QName]xsd.IdentityConstraint)
 	collect := func(namespace string, element xsd.Element) error {
 		for _, constraint := range element.IdentityConstraints {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			name := xsd.QName{Namespace: namespace, Local: constraint.Name}
 			if constraint.Name == "" {
 				return invalidComponent(
@@ -2065,7 +2541,7 @@ func (s *compileState) validateIdentityConstraints() error {
 			if _, duplicate := constraints[name]; duplicate {
 				return duplicateComponent("identity constraint", name)
 			}
-			if !validIdentitySelector(constraint.Selector, constraint.Namespaces) {
+			if !validIdentitySelector(constraint.Selector, constraint.Namespaces, s) {
 				return invalidComponent(
 					"identity constraint",
 					name,
@@ -2073,7 +2549,10 @@ func (s *compileState) validateIdentityConstraints() error {
 				)
 			}
 			for _, field := range constraint.Fields {
-				if !validIdentityField(field, constraint.Namespaces) {
+				if err := s.contextError(); err != nil {
+					return err
+				}
+				if !validIdentityField(field, constraint.Namespaces, s) {
 					return invalidComponent(
 						"identity constraint",
 						name,
@@ -2100,6 +2579,9 @@ func (s *compileState) validateIdentityConstraints() error {
 		return nil
 	}
 	for name, element := range s.elements {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if err := collect(name.Namespace, element); err != nil {
 			return err
 		}
@@ -2108,17 +2590,23 @@ func (s *compileState) validateIdentityConstraints() error {
 				element.InlineComplexType.Content,
 				name.Namespace,
 				collect,
-			); err != nil {
+				s); err != nil {
 				return err
 			}
 		}
 	}
 	for name, typeDefinition := range s.complexTypes {
-		if err := collectModelIdentityConstraints(typeDefinition.Content, name.Namespace, collect); err != nil {
+		if err := s.contextError(); err != nil {
+			return err
+		}
+		if err := collectModelIdentityConstraints(typeDefinition.Content, name.Namespace, collect, s); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedComponentNames(constraints) {
+	for _, name := range sortedComponentNames(constraints, s) {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		constraint := constraints[name]
 		if constraint.Kind == xsd.IdentityKeyRef {
 			referenced, ok := constraints[constraint.Refer]
@@ -2137,9 +2625,16 @@ func (s *compileState) validateIdentityConstraints() error {
 	return nil
 }
 
-func validIdentitySelector(expression string, namespaces map[string]string) bool {
+func validIdentitySelector(expression string, namespaces map[string]string, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	expression = xsd.NormalizeIdentityXPath(expression)
 	for _, branch := range strings.Split(expression, "|") {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		branch = strings.TrimSpace(branch)
 		if branch == "" {
 			return false
@@ -2148,6 +2643,9 @@ func validIdentitySelector(expression string, namespaces map[string]string) bool
 			branch = strings.TrimPrefix(branch, ".//")
 			branch = strings.TrimPrefix(branch, "./")
 			for _, step := range strings.Split(branch, "/") {
+				if err := compileOwnerError(owner); err != nil {
+					return false
+				}
 				if step != "." {
 					step = strings.TrimPrefix(step, "child::")
 					if !validIdentityName(step, namespaces, true) {
@@ -2160,15 +2658,25 @@ func validIdentitySelector(expression string, namespaces map[string]string) bool
 	return true
 }
 
-func validIdentityField(expression string, namespaces map[string]string) bool {
+func validIdentityField(expression string, namespaces map[string]string, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	expression = xsd.NormalizeIdentityXPath(expression)
 	for _, branch := range strings.Split(expression, "|") {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		branch = strings.TrimSpace(branch)
 		if branch != "." {
 			branch = strings.TrimPrefix(branch, ".//")
 			branch = strings.TrimPrefix(branch, "./")
 			steps := strings.Split(branch, "/")
 			for index, step := range steps {
+				if err := compileOwnerError(owner); err != nil {
+					return false
+				}
 				attribute := strings.HasPrefix(step, "@")
 				if !attribute {
 					attribute = strings.HasPrefix(step, "attribute::")
@@ -2221,11 +2729,20 @@ func collectModelIdentityConstraints(
 	group *xsd.ModelGroup,
 	namespace string,
 	collect func(string, xsd.Element) error,
+
+	owner ...*compileState,
 ) error {
+	if err := compileOwnerError(owner); err != nil {
+		return err
+	}
+
 	if group == nil {
 		return nil
 	}
 	for _, particle := range group.Particles {
+		if err := compileOwnerError(owner); err != nil {
+			return err
+		}
 		if particle.Element != nil {
 			if err := collect(namespace, *particle.Element); err != nil {
 				return err
@@ -2235,12 +2752,12 @@ func collectModelIdentityConstraints(
 					particle.Element.InlineComplexType.Content,
 					namespace,
 					collect,
-				); err != nil {
+					owner...); err != nil {
 					return err
 				}
 			}
 		}
-		if err := collectModelIdentityConstraints(particle.Group, namespace, collect); err != nil {
+		if err := collectModelIdentityConstraints(particle.Group, namespace, collect, owner...); err != nil {
 			return err
 		}
 	}
@@ -2251,6 +2768,10 @@ func (s *compileState) validateSimpleTypeAcyclic(
 	name xsd.QName,
 	colors map[xsd.QName]uint8,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	switch colors[name] {
 	case 1:
 		return invalidComponent("simple type", name, "derivation is recursive")
@@ -2269,6 +2790,9 @@ func (s *compileState) validateSimpleTypeAcyclic(
 		dependencies = append(dependencies, typeDefinition.MemberTypes...)
 	}
 	for _, dependency := range dependencies {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if _, userDefined := s.simpleTypes[dependency]; userDefined {
 			if err := s.validateSimpleTypeAcyclic(dependency, colors); err != nil {
 				return err
@@ -2284,6 +2808,10 @@ func (s *compileState) validateModelGroup(
 	typeNamespace string,
 	particles *int,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if group == nil {
 		return nil
 	}
@@ -2291,6 +2819,9 @@ func (s *compileState) validateModelGroup(
 		return err
 	}
 	for _, particle := range group.Particles {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		*particles++
 		if *particles > s.compiler.limits.MaxParticles {
 			return fmt.Errorf(
@@ -2368,7 +2899,7 @@ func (s *compileState) validateModelGroup(
 				}
 			}
 		}
-		if err := validateWildcard(particle.Wildcard); err != nil {
+		if err := validateWildcard(particle.Wildcard, s); err != nil {
 			return err
 		}
 		if particle.Element == nil && particle.Group == nil && particle.Wildcard == nil {
@@ -2382,6 +2913,10 @@ func (s *compileState) validateModelGroup(
 }
 
 func (s *compileState) validateElementValueConstraint(element xsd.Element) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	lexical := element.Default
 	if elementFixedSet(element) {
 		lexical = element.Fixed
@@ -2458,6 +2993,10 @@ func (s *compileState) validateElementValueConstraint(element xsd.Element) error
 }
 
 func (s *compileState) validateAttributeDeclarationValueConstraint(attribute xsd.Attribute) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if !attributeDeclarationDefaultSet(attribute) && !attributeDeclarationFixedSet(attribute) {
 		return nil
 	}
@@ -2474,6 +3013,10 @@ func (s *compileState) validateAttributeDeclarationValueConstraint(attribute xsd
 }
 
 func (s *compileState) validateAttributeUseValueConstraint(attribute xsd.AttributeUse) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if !attributeDefaultSet(attribute) && !attributeFixedSet(attribute) {
 		return nil
 	}
@@ -2506,6 +3049,10 @@ func (s *compileState) validateAttributeConstraint(
 	inline *xsd.SimpleType,
 	lexical string,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	return s.validateAttributeConstraintContext(typeName, inline, lexical, nil)
 }
 
@@ -2515,6 +3062,10 @@ func (s *compileState) validateAttributeConstraintContext(
 	lexical string,
 	namespaces map[string]string,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	id := xsd.QName{Namespace: xsd.Namespace, Local: "ID"}
 	if inline != nil {
 		if s.inlineSimpleTypeDerivesFrom(*inline, id) {
@@ -2541,7 +3092,14 @@ func (s *compileState) inlineSimpleTypeDerivesFrom(
 	typeDefinition xsd.SimpleType,
 	base xsd.QName,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	for depth := 0; !compileDepthExceeded(depth); depth = compileChildDepth(depth) {
+		if err := s.contextError(); err != nil {
+			return false
+		}
 		if typeDefinition.Variety != xsd.SimpleRestriction {
 			return false
 		}
@@ -2578,6 +3136,10 @@ func attributeDeclarationFixedSet(attribute xsd.Attribute) bool {
 }
 
 func (s *compileState) simpleConstraintValid(typeName xsd.QName, lexical string) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.simpleConstraintValidContext(typeName, lexical, nil)
 }
 
@@ -2586,6 +3148,10 @@ func (s *compileState) simpleConstraintValidContext(
 	lexical string,
 	namespaces map[string]string,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.simpleConstraintValidDepthContext(typeName, lexical, namespaces, 0)
 }
 
@@ -2594,6 +3160,10 @@ func (s *compileState) simpleConstraintValidDepth(
 	lexical string,
 	depth int,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.simpleConstraintValidDepthContext(typeName, lexical, nil, depth)
 }
 
@@ -2603,6 +3173,10 @@ func (s *compileState) simpleConstraintValidDepthContext(
 	namespaces map[string]string,
 	depth int,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if compileDepthExceeded(depth) {
 		return false
 	}
@@ -2640,6 +3214,10 @@ func (s *compileState) simpleConstraintValidDepthContext(
 }
 
 func (s *compileState) inlineConstraintValid(typeDefinition xsd.SimpleType, lexical string) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.inlineConstraintValidContext(typeDefinition, lexical, nil)
 }
 
@@ -2648,6 +3226,10 @@ func (s *compileState) inlineConstraintValidContext(
 	lexical string,
 	namespaces map[string]string,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.inlineConstraintValidDepthContext(typeDefinition, lexical, namespaces, 0)
 }
 
@@ -2656,6 +3238,10 @@ func (s *compileState) inlineConstraintValidDepth(
 	lexical string,
 	depth int,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	return s.inlineConstraintValidDepthContext(typeDefinition, lexical, nil, depth)
 }
 
@@ -2665,6 +3251,10 @@ func (s *compileState) inlineConstraintValidDepthContext(
 	namespaces map[string]string,
 	depth int,
 ) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	if compileDepthExceeded(depth) {
 		return false
 	}
@@ -2691,9 +3281,12 @@ func (s *compileState) inlineConstraintValidDepthContext(
 		hasPattern := false
 		patternMatched := false
 		for _, facet := range typeDefinition.Facets {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			if facet.Kind == xsd.FacetPattern {
 				hasPattern = true
-				pattern, err := datatype.CompilePattern(facet.Value)
+				pattern, err := datatype.CompilePatternContext(s.ctx, facet.Value)
 				if err != nil {
 					return false
 				}
@@ -2715,6 +3308,9 @@ func (s *compileState) inlineConstraintValidDepthContext(
 			return false
 		}
 		for _, item := range items {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			valid := s.simpleConstraintValidDepthContext(
 				typeDefinition.ItemType,
 				item,
@@ -2736,11 +3332,17 @@ func (s *compileState) inlineConstraintValidDepthContext(
 		return true
 	case xsd.SimpleUnion:
 		for _, member := range typeDefinition.MemberTypes {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			if s.simpleConstraintValidDepthContext(member, lexical, namespaces, compileChildDepth(depth)) {
 				return true
 			}
 		}
 		for _, member := range typeDefinition.InlineMembers {
+			if err := s.contextError(); err != nil {
+				return false
+			}
 			if s.inlineConstraintValidDepthContext(member, lexical, namespaces, compileChildDepth(depth)) {
 				return true
 			}
@@ -2759,22 +3361,41 @@ func (s *compileState) validateUniqueParticleAttribution(
 	group *xsd.ModelGroup,
 	targetNamespace string,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	state := upaState{compile: s, follow: make(map[int]upaPositions)}
 	info := state.group(group, targetNamespace)
 	states := make([]upaPositions, 0, len(state.follow)+1)
 	states = append(states, info.first)
 	for _, positions := range state.follow {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		states = append(states, positions)
 	}
 	for _, positions := range states {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		values := make([]nameClass, 0, len(positions))
 		for _, class := range positions {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			values = append(values, class)
 		}
 		for left := range values {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			for offset := range values[left+1:] {
+				if err := s.contextError(); err != nil {
+					return err
+				}
 				right := left + offset + 1
-				if nameClassesOverlap(values[left], values[right], targetNamespace) {
+				if nameClassesOverlap(values[left], values[right], targetNamespace, s) {
 					return fmt.Errorf(
 						"%w: content model violates unique particle attribution",
 						ErrInvalidComponent,
@@ -2801,8 +3422,15 @@ type upaState struct {
 }
 
 func (s *upaState) group(group *xsd.ModelGroup, targetNamespace string) upaInfo {
+	if err := s.compile.contextError(); err != nil {
+		return upaInfo{}
+	}
+
 	children := make([]upaInfo, len(group.Particles))
 	for index, particle := range group.Particles {
+		if err := s.compile.contextError(); err != nil {
+			return upaInfo{}
+		}
 		children[index] = s.particle(particle, targetNamespace)
 	}
 	var result upaInfo
@@ -2810,23 +3438,35 @@ func (s *upaState) group(group *xsd.ModelGroup, targetNamespace string) upaInfo 
 	case xsd.Choice:
 		result = upaInfo{first: upaPositions{}, last: upaPositions{}}
 		for _, child := range children {
+			if err := s.compile.contextError(); err != nil {
+				return upaInfo{}
+			}
 			if child.nullable {
 				result.nullable = true
 			}
-			mergeUPAPositions(result.first, child.first)
-			mergeUPAPositions(result.last, child.last)
+			mergeUPAPositions(result.first, child.first, s.compile)
+			mergeUPAPositions(result.last, child.last, s.compile)
 		}
 	case xsd.All:
 		result = upaInfo{nullable: true, first: upaPositions{}, last: upaPositions{}}
 		for _, child := range children {
+			if err := s.compile.contextError(); err != nil {
+				return upaInfo{}
+			}
 			if !child.nullable {
 				result.nullable = false
 			}
-			mergeUPAPositions(result.first, child.first)
-			mergeUPAPositions(result.last, child.last)
+			mergeUPAPositions(result.first, child.first, s.compile)
+			mergeUPAPositions(result.last, child.last, s.compile)
 		}
 		for left, child := range children {
+			if err := s.compile.contextError(); err != nil {
+				return upaInfo{}
+			}
 			for _, next := range children[left+1:] {
+				if err := s.compile.contextError(); err != nil {
+					return upaInfo{}
+				}
 				s.addFollow(child.last, next.first)
 				s.addFollow(next.last, child.first)
 			}
@@ -2834,14 +3474,17 @@ func (s *upaState) group(group *xsd.ModelGroup, targetNamespace string) upaInfo 
 	default:
 		result = upaInfo{nullable: true, first: upaPositions{}, last: upaPositions{}}
 		for _, child := range children {
+			if err := s.compile.contextError(); err != nil {
+				return upaInfo{}
+			}
 			if result.nullable {
-				mergeUPAPositions(result.first, child.first)
+				mergeUPAPositions(result.first, child.first, s.compile)
 			}
 			s.addFollow(result.last, child.first)
 			if child.nullable {
-				mergeUPAPositions(result.last, child.last)
+				mergeUPAPositions(result.last, child.last, s.compile)
 			} else {
-				result.last = cloneUPAPositions(child.last)
+				result.last = cloneUPAPositions(child.last, s.compile)
 			}
 			if !child.nullable {
 				result.nullable = false
@@ -2855,6 +3498,10 @@ func (s *upaState) group(group *xsd.ModelGroup, targetNamespace string) upaInfo 
 }
 
 func (s *upaState) particle(particle xsd.Particle, targetNamespace string) upaInfo {
+	if err := s.compile.contextError(); err != nil {
+		return upaInfo{}
+	}
+
 	var result upaInfo
 	if particle.Element != nil {
 		name := particle.Element.Ref
@@ -2870,7 +3517,10 @@ func (s *upaState) particle(particle xsd.Particle, targetNamespace string) upaIn
 				substitutionHeads: s.compile.substitutionHeads,
 			}
 			for member := range s.compile.substitutionHeads {
-				if _, ok := set.SubstitutionMember(particle.Element.Ref, member); ok {
+				if err := s.compile.contextError(); err != nil {
+					return upaInfo{}
+				}
+				if _, ok := substitutionMember(set, particle.Element.Ref, member, s.compile); ok {
 					class.alternatives = append(class.alternatives, member)
 				}
 			}
@@ -2887,13 +3537,21 @@ func (s *upaState) particle(particle xsd.Particle, targetNamespace string) upaIn
 }
 
 func (s *upaState) leaf(class nameClass) upaInfo {
+	if err := s.compile.contextError(); err != nil {
+		return upaInfo{}
+	}
+
 	position := s.next
 	s.next++
 	positions := upaPositions{position: class}
-	return upaInfo{first: positions, last: cloneUPAPositions(positions)}
+	return upaInfo{first: positions, last: cloneUPAPositions(positions, s.compile)}
 }
 
 func (s *upaState) occurs(info upaInfo, minimum uint64, maximum uint64, unbounded bool) upaInfo {
+	if err := s.compile.contextError(); err != nil {
+		return upaInfo{}
+	}
+
 	if unbounded || maximum > 1 {
 		s.addFollow(info.last, info.first)
 	}
@@ -2904,27 +3562,49 @@ func (s *upaState) occurs(info upaInfo, minimum uint64, maximum uint64, unbounde
 }
 
 func (s *upaState) addFollow(from upaPositions, to upaPositions) {
+	if err := s.compile.contextError(); err != nil {
+		return
+	}
+
 	for position := range from {
+		if err := s.compile.contextError(); err != nil {
+			return
+		}
 		if s.follow[position] == nil {
 			s.follow[position] = upaPositions{}
 		}
-		mergeUPAPositions(s.follow[position], to)
+		mergeUPAPositions(s.follow[position], to, s.compile)
 	}
 }
 
-func cloneUPAPositions(source upaPositions) upaPositions {
+func cloneUPAPositions(source upaPositions, owner ...*compileState) upaPositions {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	clone := make(upaPositions, len(source))
-	mergeUPAPositions(clone, source)
+	mergeUPAPositions(clone, source, owner...)
 	return clone
 }
 
-func mergeUPAPositions(target upaPositions, source upaPositions) {
+func mergeUPAPositions(target upaPositions, source upaPositions, owner ...*compileState) {
+	if err := compileOwnerError(owner); err != nil {
+		return
+	}
+
 	for position, class := range source {
+		if err := compileOwnerError(owner); err != nil {
+			return
+		}
 		target[position] = class
 	}
 }
 
-func particleNullable(particle xsd.Particle) bool {
+func particleNullable(particle xsd.Particle, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	if particle.MinOccurs == 0 {
 		return true
 	}
@@ -2934,14 +3614,20 @@ func particleNullable(particle xsd.Particle) bool {
 	switch particle.Group.Compositor {
 	case xsd.Choice:
 		for _, child := range particle.Group.Particles {
-			if particleNullable(child) {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
+			if particleNullable(child, owner...) {
 				return true
 			}
 		}
 		return false
 	case xsd.Sequence, xsd.All:
 		for _, child := range particle.Group.Particles {
-			if !particleNullable(child) {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
+			if !particleNullable(child, owner...) {
 				return false
 			}
 		}
@@ -2951,10 +3637,20 @@ func particleNullable(particle xsd.Particle) bool {
 	}
 }
 
-func nameClassesOverlap(left nameClass, right nameClass, targetNamespace string) bool {
+func nameClassesOverlap(left nameClass, right nameClass, targetNamespace string, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	if left.name != nil && right.name != nil {
-		for _, leftName := range nameClassNames(left) {
-			for _, rightName := range nameClassNames(right) {
+		for _, leftName := range nameClassNames(left, owner...) {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
+			for _, rightName := range nameClassNames(right, owner...) {
+				if err := compileOwnerError(owner); err != nil {
+					return false
+				}
 				if leftName == rightName {
 					return true
 				}
@@ -2963,16 +3659,22 @@ func nameClassesOverlap(left nameClass, right nameClass, targetNamespace string)
 		return false
 	}
 	if left.name != nil {
-		for _, name := range nameClassNames(left) {
-			if wildcardAllows(right.wildcard, name.Namespace, targetNamespace) {
+		for _, name := range nameClassNames(left, owner...) {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
+			if wildcardAllows(right.wildcard, name.Namespace, targetNamespace, owner...) {
 				return true
 			}
 		}
 		return false
 	}
 	if right.name != nil {
-		for _, name := range nameClassNames(right) {
-			if wildcardAllows(left.wildcard, name.Namespace, targetNamespace) {
+		for _, name := range nameClassNames(right, owner...) {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
+			if wildcardAllows(left.wildcard, name.Namespace, targetNamespace, owner...) {
 				return true
 			}
 		}
@@ -2980,30 +3682,50 @@ func nameClassesOverlap(left nameClass, right nameClass, targetNamespace string)
 	}
 	candidates := []string{"", targetNamespace, "urn:xsd-wildcard-probe"}
 	for _, wildcard := range []*xsd.Wildcard{left.wildcard, right.wildcard} {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		for _, namespace := range wildcard.Namespaces {
+			if err := compileOwnerError(owner); err != nil {
+				return false
+			}
 			if !strings.HasPrefix(namespace, "##") {
 				candidates = append(candidates, namespace)
 			}
 		}
 	}
 	for _, namespace := range candidates {
-		if wildcardAllows(left.wildcard, namespace, targetNamespace) &&
-			wildcardAllows(right.wildcard, namespace, targetNamespace) {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
+		if wildcardAllows(left.wildcard, namespace, targetNamespace, owner...) &&
+			wildcardAllows(right.wildcard, namespace, targetNamespace, owner...) {
 			return true
 		}
 	}
 	return false
 }
 
-func nameClassNames(class nameClass) []xsd.QName {
+func nameClassNames(class nameClass, owner ...*compileState) []xsd.QName {
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
 	return append([]xsd.QName{*class.name}, class.alternatives...)
 }
 
-func wildcardAllows(wildcard *xsd.Wildcard, namespace string, targetNamespace string) bool {
+func wildcardAllows(wildcard *xsd.Wildcard, namespace string, targetNamespace string, owner ...*compileState) bool {
+	if err := compileOwnerError(owner); err != nil {
+		return false
+	}
+
 	if wildcard == nil {
 		return false
 	}
 	for _, constraint := range wildcard.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return false
+		}
 		switch constraint {
 		case "##any":
 			return true
@@ -3028,7 +3750,11 @@ func wildcardAllows(wildcard *xsd.Wildcard, namespace string, targetNamespace st
 	return false
 }
 
-func validateWildcard(wildcard *xsd.Wildcard) error {
+func validateWildcard(wildcard *xsd.Wildcard, owner ...*compileState) error {
+	if err := compileOwnerError(owner); err != nil {
+		return err
+	}
+
 	if wildcard == nil {
 		return nil
 	}
@@ -3046,6 +3772,9 @@ func validateWildcard(wildcard *xsd.Wildcard) error {
 	}
 	seen := make(map[string]struct{}, len(wildcard.Namespaces))
 	for _, namespace := range wildcard.Namespaces {
+		if err := compileOwnerError(owner); err != nil {
+			return err
+		}
 		if strings.HasPrefix(namespace, "##") && namespace != "##any" &&
 			namespace != "##other" && namespace != "##local" &&
 			namespace != "##targetNamespace" {
@@ -3075,6 +3804,10 @@ func (s *compileState) validateAttributeUse(
 	attribute xsd.AttributeUse,
 	typeNamespace string,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	_ = typeNamespace
 	if (attribute.Name == "") == (attribute.Ref.Local == "") {
 		return fmt.Errorf(
@@ -3132,6 +3865,10 @@ func directNotationType(name xsd.QName) bool {
 }
 
 func (s *compileState) typeExists(name xsd.QName, requiredKind string) bool {
+	if err := s.contextError(); err != nil {
+		return false
+	}
+
 	kind := ""
 	if name.Namespace == xsd.Namespace {
 		kind = builtInTypes[name.Local]
@@ -3176,6 +3913,9 @@ type instanceKey struct {
 }
 
 type compileState struct {
+	particleCopies    int
+	copyError         error
+	ctx               context.Context
 	compiler          *Compiler
 	resources         map[string]resourceDocument
 	instances         map[instanceKey]*Document
@@ -3193,14 +3933,66 @@ type compileState struct {
 	typeKinds         map[xsd.QName]string
 }
 
+// Value-space and copy helpers stop work without publishing partial values;
+// Compile gives the caller's context error precedence at the publication owner.
+func (s *compileState) contextError() error {
+	if s == nil {
+		return nil
+	}
+	if s.ctx != nil {
+		if err := s.ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return s.copyError
+}
+
+// Admission precedes each compiler-owned particle slice allocation. Subtraction
+// keeps cumulative accounting overflow-safe without inspecting expanded trees.
+// Set accessors deliberately have no invocation owner or copy-work policy.
+func admitParticleCopies(count int, owner []*compileState) bool {
+	if len(owner) == 0 || owner[0] == nil {
+		return true
+	}
+	s := owner[0]
+	if s.contextError() != nil {
+		return false
+	}
+	limit := defaultMaxParticleCopies
+	if s.compiler != nil && s.compiler.limits.MaxParticleCopies > 0 {
+		limit = s.compiler.limits.MaxParticleCopies
+	}
+	if count > limit-s.particleCopies {
+		s.copyError = fmt.Errorf("%w: particle copies exceed %d", ErrLimitExceeded, limit)
+		return false
+	}
+	s.particleCopies += count
+	return true
+}
+
+// Shared copy helpers also serve context-free immutable Set accessors.
+func compileOwnerError(owner []*compileState) error {
+	if len(owner) == 0 {
+		return nil
+	}
+	return owner[0].contextError()
+}
+
 func (s *compileState) compileDocument(
 	ctx context.Context,
 	identity string,
 	effectiveNamespace string,
 	depth int,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if s.ctx == nil {
+		s.ctx = ctx
 	}
 	if depth > s.compiler.limits.MaxDepth {
 		return fmt.Errorf("%w: schema depth exceeds %d", ErrLimitExceeded, s.compiler.limits.MaxDepth)
@@ -3228,6 +4020,9 @@ func (s *compileState) compileDocument(
 	}
 
 	for _, reference := range resource.document.References {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		if compilableReference(reference) {
 			if err := s.compileReference(ctx, compiled, resource.document, reference, namespace, chameleon, depth); err != nil {
 				return err
@@ -3253,6 +4048,10 @@ func (s *compileState) compileReference(
 	chameleon bool,
 	depth int,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	s.references++
 	if s.references > s.compiler.limits.MaxReferences {
 		return fmt.Errorf("%w: reference count exceeds %d", ErrLimitExceeded, s.compiler.limits.MaxReferences)
@@ -3278,6 +4077,9 @@ func (s *compileState) compileReference(
 	}
 	if reference.Kind == xsd.ReferenceRedefine {
 		for _, redefinition := range document.Redefinitions {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			if redefinition.Reference.URI == reference.URI {
 				if err := s.applyRedefinition(redefinition, document, namespace, chameleon); err != nil {
 					return err
@@ -3294,13 +4096,20 @@ func (s *compileState) applyRedefinition(
 	namespace string,
 	chameleon bool,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	for _, definition := range redefinition.SimpleTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name := xsd.QName{Namespace: namespace, Local: definition.Name}
 		original, ok := s.simpleTypes[name]
 		if !ok {
 			return unresolvedComponent("redefined simple type", name)
 		}
-		definition = normalizeInlineSimpleType(definition, namespace, chameleon)
+		definition = normalizeInlineSimpleType(definition, namespace, chameleon, s)
 		if definition.Variety != xsd.SimpleRestriction {
 			return invalidComponent("redefined simple type", name, "must restrict itself")
 		}
@@ -3313,23 +4122,29 @@ func (s *compileState) applyRedefinition(
 		s.simpleTypes[name] = definition
 	}
 	for _, definition := range redefinition.ModelGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name := xsd.QName{Namespace: namespace, Local: definition.Name}
 		original, ok := s.modelGroups[name]
 		if !ok {
 			return unresolvedComponent("redefined model group", name)
 		}
-		definition.Content = cloneModelGroup(definition.Content)
+		definition.Content = cloneModelGroup(definition.Content, s)
 		normalizeModelGroup(
 			definition.Content,
 			document.ElementFormDefault,
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
-		replaceRedefinedGroupRefs(definition.Content, name, original.Content)
+			s)
+		replaceRedefinedGroupRefs(definition.Content, name, original.Content, s)
 		s.modelGroups[name] = definition
 	}
 	for _, definition := range redefinition.AttributeGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name := xsd.QName{Namespace: namespace, Local: definition.Name}
 		original, ok := s.attributeGroups[name]
 		if !ok {
@@ -3340,10 +4155,13 @@ func (s *compileState) applyRedefinition(
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		foundSelf := false
 		refs := make([]xsd.QName, 0, len(definition.References))
 		for _, reference := range definition.References {
+			if err := s.contextError(); err != nil {
+				return err
+			}
 			if reference == name {
 				foundSelf = true
 				definition.Attributes = append(
@@ -3351,7 +4169,7 @@ func (s *compileState) applyRedefinition(
 					definition.Attributes...,
 				)
 				if definition.Wildcard == nil {
-					definition.Wildcard = cloneWildcard(original.Wildcard)
+					definition.Wildcard = cloneWildcard(original.Wildcard, s)
 				}
 			} else {
 				refs = append(refs, reference)
@@ -3364,6 +4182,9 @@ func (s *compileState) applyRedefinition(
 		s.attributeGroups[name] = definition
 	}
 	for _, definition := range redefinition.ComplexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name := xsd.QName{Namespace: namespace, Local: definition.Name}
 		original, ok := s.complexTypes[name]
 		if !ok {
@@ -3375,7 +4196,7 @@ func (s *compileState) applyRedefinition(
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		if definition.Base != name {
 			return invalidComponent("redefined complex type", name, "must derive from itself")
 		}
@@ -3384,7 +4205,7 @@ func (s *compileState) applyRedefinition(
 			return invalidComponent("redefined complex type", name, "must derive from itself")
 		}
 		if definition.Derivation == xsd.DerivationExtension {
-			definition.Content = extendContent(original.Content, definition.Content)
+			definition.Content = extendContent(original.Content, definition.Content, s)
 			definition.Attributes = append(
 				append([]xsd.AttributeUse(nil), original.Attributes...),
 				definition.Attributes...,
@@ -3394,7 +4215,7 @@ func (s *compileState) applyRedefinition(
 				definition.AttributeGroupRefs...,
 			)
 			if definition.AttributeWildcard == nil {
-				definition.AttributeWildcard = cloneWildcard(original.AttributeWildcard)
+				definition.AttributeWildcard = cloneWildcard(original.AttributeWildcard, s)
 			}
 		} else if err := s.validateComplexRestriction(definition, original); err != nil {
 			return invalidComponent("redefined complex type", name, err.Error())
@@ -3410,17 +4231,26 @@ func replaceRedefinedGroupRefs(
 	group *xsd.ModelGroup,
 	name xsd.QName,
 	original *xsd.ModelGroup,
+
+	owner ...*compileState,
 ) {
+	if err := compileOwnerError(owner); err != nil {
+		return
+	}
+
 	if group == nil {
 		return
 	}
 	for index := range group.Particles {
+		if err := compileOwnerError(owner); err != nil {
+			return
+		}
 		particle := &group.Particles[index]
 		if particle.GroupRef == name {
 			particle.GroupRef = xsd.QName{}
-			particle.Group = cloneModelGroup(original)
+			particle.Group = cloneModelGroup(original, owner...)
 		} else {
-			replaceRedefinedGroupRefs(particle.Group, name, original)
+			replaceRedefinedGroupRefs(particle.Group, name, original, owner...)
 		}
 	}
 }
@@ -3430,7 +4260,14 @@ func (s *compileState) indexComponents(
 	namespace string,
 	chameleon bool,
 ) error {
+	if err := s.contextError(); err != nil {
+		return err
+	}
+
 	for _, notation := range document.Notations {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name, err := s.componentName(namespace, notation.Name, "notation")
 		if err != nil {
 			return err
@@ -3438,11 +4275,14 @@ func (s *compileState) indexComponents(
 		if _, exists := s.notations[name]; exists {
 			return duplicateComponent("notation", name)
 		}
-		notation.Annotation = cloneAnnotation(notation.Annotation)
+		notation.Annotation = cloneAnnotation(notation.Annotation, s)
 		s.notations[name] = notation
 	}
 	for _, element := range document.Elements {
-		element = cloneElement(element)
+		if err := s.contextError(); err != nil {
+			return err
+		}
+		element = cloneElement(element, s)
 		if element.Block.String() == "" {
 			element.Block = document.BlockDefault
 		}
@@ -3455,7 +4295,7 @@ func (s *compileState) indexComponents(
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		name, err := s.componentName(namespace, element.Name, "element")
 		if err != nil {
 			return err
@@ -3471,6 +4311,9 @@ func (s *compileState) indexComponents(
 				namespace,
 			)
 			for index := range element.IdentityConstraints {
+				if err := s.contextError(); err != nil {
+					return err
+				}
 				element.IdentityConstraints[index].Refer = adoptNamespace(
 					element.IdentityConstraints[index].Refer,
 					namespace,
@@ -3480,7 +4323,10 @@ func (s *compileState) indexComponents(
 		s.elements[name] = element
 	}
 	for _, attribute := range document.Attributes {
-		attribute = cloneAttribute(attribute)
+		if err := s.contextError(); err != nil {
+			return err
+		}
+		attribute = cloneAttribute(attribute, s)
 		name, err := s.componentName(namespace, attribute.Name, "attribute")
 		if err != nil {
 			return err
@@ -3496,13 +4342,16 @@ func (s *compileState) indexComponents(
 				*attribute.InlineSimpleType,
 				namespace,
 				chameleon,
-			)
+				s)
 			attribute.InlineSimpleType = &typeDefinition
 		}
 		s.attributes[name] = attribute
 	}
 	for _, simpleType := range document.SimpleTypes {
-		simpleType = cloneSimpleType(simpleType)
+		if err := s.contextError(); err != nil {
+			return err
+		}
+		simpleType = cloneSimpleType(simpleType, s)
 		name, err := s.componentName(namespace, simpleType.Name, "type")
 		if err != nil {
 			return err
@@ -3514,6 +4363,9 @@ func (s *compileState) indexComponents(
 			simpleType.Base = adoptNamespace(simpleType.Base, namespace)
 			simpleType.ItemType = adoptNamespace(simpleType.ItemType, namespace)
 			for index := range simpleType.MemberTypes {
+				if err := s.contextError(); err != nil {
+					return err
+				}
 				simpleType.MemberTypes[index] = adoptNamespace(
 					simpleType.MemberTypes[index],
 					namespace,
@@ -3521,9 +4373,12 @@ func (s *compileState) indexComponents(
 			}
 		}
 		s.typeKinds[name] = "simple type"
-		s.simpleTypes[name] = cloneSimpleType(simpleType)
+		s.simpleTypes[name] = cloneSimpleType(simpleType, s)
 	}
 	for _, complexType := range document.ComplexTypes {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name, err := s.componentName(namespace, complexType.Name, "type")
 		if err != nil {
 			return err
@@ -3543,11 +4398,14 @@ func (s *compileState) indexComponents(
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		s.typeKinds[name] = "complex type"
 		s.complexTypes[name] = complexType
 	}
 	for _, group := range document.ModelGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name, err := s.componentName(namespace, group.Name, "model group")
 		if err != nil {
 			return err
@@ -3555,17 +4413,20 @@ func (s *compileState) indexComponents(
 		if _, exists := s.modelGroups[name]; exists {
 			return duplicateComponent("model group", name)
 		}
-		group.Content = cloneModelGroup(group.Content)
+		group.Content = cloneModelGroup(group.Content, s)
 		normalizeModelGroup(
 			group.Content,
 			document.ElementFormDefault,
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		s.modelGroups[name] = group
 	}
 	for _, group := range document.AttributeGroups {
+		if err := s.contextError(); err != nil {
+			return err
+		}
 		name, err := s.componentName(namespace, group.Name, "attribute group")
 		if err != nil {
 			return err
@@ -3578,7 +4439,7 @@ func (s *compileState) indexComponents(
 			document.AttributeFormDefault,
 			namespace,
 			chameleon,
-		)
+			s)
 		s.attributeGroups[name] = group
 	}
 	return nil
@@ -3590,14 +4451,20 @@ func normalizeComplexType(
 	attributeDefault xsd.Form,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) xsd.ComplexType {
-	complexType = cloneComplexType(complexType)
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.ComplexType{}
+	}
+
+	complexType = cloneComplexType(complexType, owner...)
 	if complexType.InlineSimpleType != nil {
 		typeDefinition := normalizeInlineSimpleType(
 			*complexType.InlineSimpleType,
 			namespace,
 			chameleon,
-		)
+			owner...)
 		complexType.InlineSimpleType = &typeDefinition
 	}
 	normalizeModelGroup(
@@ -3606,15 +4473,18 @@ func normalizeComplexType(
 		attributeDefault,
 		namespace,
 		chameleon,
-	)
+		owner...)
 	complexType.Attributes = normalizeAttributeUses(
 		complexType.Attributes,
 		attributeDefault,
 		namespace,
 		chameleon,
-	)
+		owner...)
 	if chameleon {
 		for index := range complexType.AttributeGroupRefs {
+			if err := compileOwnerError(owner); err != nil {
+				return xsd.ComplexType{}
+			}
 			complexType.AttributeGroupRefs[index] = adoptNamespace(
 				complexType.AttributeGroupRefs[index],
 				namespace,
@@ -3631,9 +4501,18 @@ func normalizeElementTypes(
 	attributeDefault xsd.Form,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) xsd.Element {
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.Element{}
+	}
+
 	element.TargetNamespace = namespace
 	for index := range element.IdentityConstraints {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.Element{}
+		}
 		element.IdentityConstraints[index].TargetNamespace = namespace
 		if chameleon {
 			element.IdentityConstraints[index].Refer = adoptNamespace(
@@ -3647,7 +4526,7 @@ func normalizeElementTypes(
 			*element.InlineSimpleType,
 			namespace,
 			chameleon,
-		)
+			owner...)
 		element.InlineSimpleType = &typeDefinition
 	}
 	if element.InlineComplexType != nil {
@@ -3657,7 +4536,7 @@ func normalizeElementTypes(
 			attributeDefault,
 			namespace,
 			chameleon,
-		)
+			owner...)
 		element.InlineComplexType = &typeDefinition
 	}
 	return element
@@ -3667,25 +4546,37 @@ func normalizeInlineSimpleType(
 	typeDefinition xsd.SimpleType,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) xsd.SimpleType {
-	typeDefinition = cloneSimpleType(typeDefinition)
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.SimpleType{}
+	}
+
+	typeDefinition = cloneSimpleType(typeDefinition, owner...)
 	if typeDefinition.InlineBase != nil {
-		base := normalizeInlineSimpleType(*typeDefinition.InlineBase, namespace, chameleon)
+		base := normalizeInlineSimpleType(*typeDefinition.InlineBase, namespace, chameleon, owner...)
 		typeDefinition.InlineBase = &base
 	}
 	if typeDefinition.InlineItem != nil {
-		item := normalizeInlineSimpleType(*typeDefinition.InlineItem, namespace, chameleon)
+		item := normalizeInlineSimpleType(*typeDefinition.InlineItem, namespace, chameleon, owner...)
 		typeDefinition.InlineItem = &item
 	}
 	for index := range typeDefinition.InlineMembers {
+		if err := compileOwnerError(owner); err != nil {
+			return xsd.SimpleType{}
+		}
 		typeDefinition.InlineMembers[index] = normalizeInlineSimpleType(
 			typeDefinition.InlineMembers[index], namespace, chameleon,
-		)
+			owner...)
 	}
 	if chameleon {
 		typeDefinition.Base = adoptNamespace(typeDefinition.Base, namespace)
 		typeDefinition.ItemType = adoptNamespace(typeDefinition.ItemType, namespace)
 		for index := range typeDefinition.MemberTypes {
+			if err := compileOwnerError(owner); err != nil {
+				return xsd.SimpleType{}
+			}
 			typeDefinition.MemberTypes[index] = adoptNamespace(
 				typeDefinition.MemberTypes[index],
 				namespace,
@@ -3700,9 +4591,18 @@ func normalizeAttributeUses(
 	attributeDefault xsd.Form,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) []xsd.AttributeUse {
-	attributes = cloneAttributeUses(attributes)
+	if err := compileOwnerError(owner); err != nil {
+		return nil
+	}
+
+	attributes = cloneAttributeUses(attributes, owner...)
 	for index := range attributes {
+		if err := compileOwnerError(owner); err != nil {
+			return nil
+		}
 		attribute := &attributes[index]
 		if attribute.Form == "" {
 			attribute.Form = attributeDefault
@@ -3721,7 +4621,7 @@ func normalizeAttributeUses(
 				*attribute.InlineSimpleType,
 				namespace,
 				chameleon,
-			)
+				owner...)
 			attribute.InlineSimpleType = &typeDefinition
 		}
 	}
@@ -3733,16 +4633,25 @@ func normalizeAttributeGroup(
 	attributeDefault xsd.Form,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) xsd.AttributeGroup {
-	group = cloneAttributeGroup(group)
+	if err := compileOwnerError(owner); err != nil {
+		return xsd.AttributeGroup{}
+	}
+
+	group = cloneAttributeGroup(group, owner...)
 	group.Attributes = normalizeAttributeUses(
 		group.Attributes,
 		attributeDefault,
 		namespace,
 		chameleon,
-	)
+		owner...)
 	if chameleon {
 		for index := range group.References {
+			if err := compileOwnerError(owner); err != nil {
+				return xsd.AttributeGroup{}
+			}
 			group.References[index] = adoptNamespace(group.References[index], namespace)
 		}
 	}
@@ -3755,11 +4664,20 @@ func normalizeModelGroup(
 	attributeDefault xsd.Form,
 	namespace string,
 	chameleon bool,
+
+	owner ...*compileState,
 ) {
+	if err := compileOwnerError(owner); err != nil {
+		return
+	}
+
 	if group == nil {
 		return
 	}
 	for index := range group.Particles {
+		if err := compileOwnerError(owner); err != nil {
+			return
+		}
 		particle := &group.Particles[index]
 		if particle.Element != nil {
 			if particle.Element.Ref.Local != "" {
@@ -3778,6 +4696,9 @@ func normalizeModelGroup(
 				particle.Element.Ref = adoptNamespace(particle.Element.Ref, namespace)
 				particle.Element.Type = adoptNamespace(particle.Element.Type, namespace)
 				for index := range particle.Element.IdentityConstraints {
+					if err := compileOwnerError(owner); err != nil {
+						return
+					}
 					constraint := &particle.Element.IdentityConstraints[index]
 					constraint.Refer = adoptNamespace(constraint.Refer, namespace)
 				}
@@ -3788,7 +4709,7 @@ func normalizeModelGroup(
 				attributeDefault,
 				namespace,
 				chameleon,
-			)
+				owner...)
 		}
 		if chameleon {
 			particle.GroupRef = adoptNamespace(particle.GroupRef, namespace)
@@ -3799,7 +4720,7 @@ func normalizeModelGroup(
 			attributeDefault,
 			namespace,
 			chameleon,
-		)
+			owner...)
 	}
 }
 
@@ -3808,6 +4729,10 @@ func (s *compileState) componentName(
 	local string,
 	kind string,
 ) (xsd.QName, error) {
+	if err := s.contextError(); err != nil {
+		return xsd.QName{}, err
+	}
+
 	if local == "" {
 		return xsd.QName{}, fmt.Errorf("%w: global %s has no name", ErrInvalidComponent, kind)
 	}
@@ -3843,6 +4768,10 @@ func (s *compileState) load(
 	ctx context.Context,
 	reference xsd.SchemaReference,
 ) (*xsd.Document, string, error) {
+	if err := s.contextError(); err != nil {
+		return nil, "", err
+	}
+
 	if cached, ok := s.resources[reference.URI]; ok {
 		return cached.document, reference.URI, nil
 	}
@@ -3875,8 +4804,10 @@ func (s *compileState) load(
 	}
 	s.bytes += int64(len(resource.Content))
 	document, err := xsd.Parse(ctx, resource.Content, xsd.ParseOptions{
-		SystemID:         resource.URI,
-		MaxDocumentBytes: s.compiler.limits.MaxBytes,
+		SystemID:            resource.URI,
+		MaxDocumentBytes:    s.compiler.limits.MaxBytes,
+		MaxNamespaceEntries: s.compiler.limits.MaxParseNamespaceEntries,
+		MaxModelBytes:       s.compiler.limits.MaxParseModelBytes,
 	})
 	if err != nil {
 		return nil, "", err

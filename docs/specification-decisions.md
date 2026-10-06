@@ -335,6 +335,14 @@ version `Second Edition, 2004-10-28`; authority `xsd-1.0-source`; section
 `xsdtest/reference/ReferenceDifferential.java`, and `scripts/run-java-reference.sh`.
 Documentation: `docs/specification-decisions.md`.
 
+Implementation clarification for XSD-DEC-012/013: validation independently caps
+serialized bytes and cumulative owned string payload occurrences, and counts
+namespace scope copies plus declaration insertions/rebindings as finite work.
+Reader scopes inherit; caller tree scopes are complete and explicit. Admission
+precedes owned map/child capacity allocation, but not standard decoder token
+allocation. The accounting policy and finite executable assertions are detailed
+in [validation](validation.md) and `validate/admission_contract_test.go`.
+
 ## Unresolved decisions
 
 None. New errata conflicts, XSTS applicability disputes, XML Schema feature

@@ -6,15 +6,55 @@ accepts caller-provided XML bytes, `ValidateReader` incrementally reads an
 All three entry points share the same validation engine and deterministic
 diagnostics.
 
+For the next major, public compiler and built-in resolver errors expose fixed
+safe categories by default while preserving sentinel/cause inspection through
+explicit trusted unwrapping. Standard context cancellation/deadline values stay
+unchanged; failed operations return no partial Set/Resource. This error-output
+policy does not alter schema data, validity classification or explicit detailed
+diagnostic reporting; see [security](security.md) for the trust boundary.
+
+Input-pattern translation shares `datatype.CompilePatternContext` with the
+compiler and receives the validation operation's context. Character-class
+subtraction is bounded at inclusive depth 256 independently of XML depth.
+Cancellation produces the context cause and no assessment result, rather than
+an invalid-instance finding. Owned translation/set work is cooperative; an
+already-running standard-library regexp compile or match cannot be interrupted.
+
 Reader validation does not require the caller to buffer the complete XML
 instance. Parsing still builds a bounded internal tree: byte, depth, node,
 attribute, text, diagnostic, XPath, and identity-value limits remain in
 force. Context cancellation and reader errors propagate to the caller, and
 DTDs remain forbidden.
 
+`MaxBytes` independently bounds serialized input and cumulative validator-owned
+string payload occurrences: expanded node/attribute names, attribute values,
+namespace prefixes/URIs, retained text (including recopied text prefixes), and
+location system IDs. This is conservative cumulative retention/copy work, not
+final retained bytes or an exact heap-size limit: segmented text recopies its
+previous prefix and can require a larger allowance than one text token.
+`MaxTextBytes` remains
+an independent bound on instance text. Tree admission checks known attribute
+counts and direct-child node lower bounds before allocating clone capacity.
+
+`MaxNamespaceEntries` independently bounds cumulative namespace work; zero
+selects 1,000,000 entries and negative values are invalid. Each copied scope
+entry and each declaration insertion, including a rebinding, counts once.
+Declarations are not ordinary attributes. Reader scopes inherit their parents;
+each tree node must supply its complete explicit scope and does not inherit one.
+Limits apply before owned retention, not before the standard XML decoder's
+token allocations. Refusal returns a resource error and no partial result,
+without modifying the caller's tree or performing implicit I/O.
+
 Diagnostics contain severity, stable code, message, instance path, system ID,
 line, column, and byte offset. A validation result may contain multiple schema
 errors. Resource-limit or parsing failures are returned as Go errors.
+
+For the next major, default diagnostic/location formatting, JSON and logging
+emit fixed redacted categories, including inside diagnostic slices and Results.
+Trusted callers still inspect the exported fields and stable diagnostic codes
+directly, or deliberately construct a detailed reporting DTO. Invalid Go format
+verb/type diagnostics can bypass redaction; use supported formatting or an
+explicitly redacted string as described in [security](security.md).
 
 The validator covers the features identified in the requirement matrix,
 including supported simple types and facets, particles, wildcards,

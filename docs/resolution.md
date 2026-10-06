@@ -4,6 +4,19 @@
 denies every request. `resolve.Memory` is suitable for tests, embedded schemas,
 and applications that already control all resource bytes.
 
+For the next major, both in-memory constructors admit the complete input before
+allocating owned map capacity, parsing URIs, or copying content. `NewMemory`
+defaults to 256 resources, 64 MiB cumulative URI/content input bytes and 16 MiB
+content per resource. `NewCatalog` defaults to 256 mappings and 64 MiB cumulative
+namespace/URI input bytes. Use `NewMemoryWithOptions` with `MemoryOptions` or
+`NewCatalogWithOptions` with `CatalogOptions` to select different finite limits.
+Limits are inclusive; zero selects the finite default and negatives are invalid.
+Refusal returns nil and an error classified by `resolve.ErrLimitExceeded` with
+safe default output. These are input allowances, not exact heap-size limits or
+a bound on caller allocations. No constructor performs I/O. Resource and mapping
+ownership remains independent of subsequent caller mutation. This intentionally
+tightens acceptance for existing constructors; no release is implied.
+
 `resolve.File` is an opt-in local filesystem capability. It accepts only
 hostless absolute `file` URIs beneath one absolute configured root, confines
 opens with `os.Root`, rejects symlink and traversal escapes, and caps each

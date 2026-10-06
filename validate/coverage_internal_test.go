@@ -102,7 +102,7 @@ func TestValidatorCoversSimpleIdentityAndFacetBranches(t *testing.T) {
 	item.Children = []*instanceNode{leaf}
 	root := identityTestNode("root")
 	root.Children = []*instanceNode{item}
-	selected := selectIdentityNodes(root, xsd.IdentityConstraint{
+	selected := state.selectIdentityNodes(root, xsd.IdentityConstraint{
 		Selector:   ".//t:item/t:leaf",
 		Namespaces: map[string]string{"t": "urn:test"},
 	})

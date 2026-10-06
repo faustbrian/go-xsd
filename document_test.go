@@ -1,15 +1,20 @@
 package xsd_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
 	xsd "github.com/faustbrian/go-xsd"
 )
 
-func TestParseErrorFormatsLocationsAndUnwraps(t *testing.T) {
+func TestParseErrorDefaultsPreserveTrustedInspection(t *testing.T) {
 	t.Parallel()
 
 	cause := errors.New("broken")
@@ -21,11 +26,103 @@ func TestParseErrorFormatsLocationsAndUnwraps(t *testing.T) {
 		Location: xsd.Location{SystemID: "schema.xsd", Line: 4, Column: 5},
 		Err:      cause,
 	}
-	if withoutSystemID.Error() != "xsd: line 2, column 3: broken" ||
-		withSystemID.Error() != "xsd: schema.xsd:4:5: broken" ||
-		!errors.Is(withSystemID, cause) {
+	var inspected *xsd.ParseError
+	if withoutSystemID.Error() != "xsd: parse failed" ||
+		withSystemID.Error() != "xsd: parse failed" ||
+		!errors.Is(withSystemID, cause) || !errors.As(withSystemID, &inspected) || inspected != withSystemID ||
+		inspected.Location.SystemID != "schema.xsd" || inspected.Location.Line != 4 || inspected.Location.Column != 5 ||
+		inspected.Err != cause || errors.Unwrap(withSystemID) != cause {
 		t.Fatalf("ParseError values = %q, %q", withoutSystemID, withSystemID)
 	}
+}
+
+func TestParseErrorDefaultSurfacesDoNotEvaluateCause(t *testing.T) {
+	for _, pointer := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pointer=%t", pointer), func(t *testing.T) {
+			cause := &parseErrorPrivacyCause{}
+			parsed := xsd.ParseError{Location: xsd.Location{SystemID: "synthetic-system-id", Line: 2, Column: 3, Offset: 4}, Err: cause}
+			var value any = parsed
+			if pointer {
+				value = &parsed
+			}
+			if parsed.Error() != "xsd: parse failed" {
+				t.Error("Error did not return the fixed category")
+			}
+			for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
+				want := "xsd: parse failed"
+				if format == "%q" {
+					want = `"xsd: parse failed"`
+				}
+				if got := fmt.Sprintf(format, value); got != want {
+					t.Errorf("default format %s is not the safe category", format)
+				}
+			}
+			encoded, err := json.Marshal(value)
+			if err != nil || string(encoded) != `"xsd: parse failed"` {
+				t.Error("JSON is not the fixed category")
+			}
+			for _, text := range []bool{false, true} {
+				var output bytes.Buffer
+				var handler slog.Handler = slog.NewJSONHandler(&output, nil)
+				if text {
+					handler = slog.NewTextHandler(&output, nil)
+				}
+				slog.New(handler).Info("operation", slog.Any("error", value))
+				if strings.Contains(output.String(), "synthetic-") || !strings.Contains(output.String(), "xsd: parse failed") {
+					t.Error("slog did not retain only the safe category")
+				}
+			}
+			var inspected *parseErrorPrivacyCause
+			if !errors.Is(&parsed, cause) || !errors.As(&parsed, &inspected) || inspected != cause || parsed.Err != cause || parsed.Location.SystemID != "synthetic-system-id" {
+				t.Error("explicit trusted inspection changed")
+			}
+			if cause.calls != 0 {
+				t.Errorf("default surfaces evaluated cause callbacks %d times", cause.calls)
+			}
+		})
+	}
+}
+
+func TestParseErrorNilAndZeroDefaults(t *testing.T) {
+	var nilError *xsd.ParseError
+	var zero xsd.ParseError
+	if nilError.Error() != "xsd: parse failed" || nilError.Unwrap() != nil || zero.Error() != "xsd: parse failed" || zero.Unwrap() != nil {
+		t.Fatal("nil/zero error contract changed")
+	}
+	for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
+		if fmt.Sprintf(format, nilError) != "<nil>" {
+			t.Fatal("nil pointer formatting did not retain the safe nil placeholder")
+		}
+	}
+	if fmt.Sprintf("%#v", zero) != "xsd: parse failed" || fmt.Sprintf("%#v", &zero) != "xsd: parse failed" {
+		t.Fatal("zero value formatting changed")
+	}
+	for _, test := range []struct {
+		value any
+		want  string
+	}{{nilError, "null"}, {zero, `"xsd: parse failed"`}, {&zero, `"xsd: parse failed"`}} {
+		got, err := json.Marshal(test.value)
+		if err != nil || string(got) != test.want {
+			t.Fatal("nil/zero JSON contract changed")
+		}
+	}
+}
+
+// Ordinary supplied cause callbacks make accidental evaluation observable.
+type parseErrorPrivacyCause struct{ calls int }
+
+func (e *parseErrorPrivacyCause) Error() string { e.calls++; return "synthetic-cause" }
+func (e *parseErrorPrivacyCause) Format(state fmt.State, _ rune) {
+	e.calls++
+	_, _ = io.WriteString(state, "synthetic-cause")
+}
+func (e *parseErrorPrivacyCause) MarshalJSON() ([]byte, error) {
+	e.calls++
+	return []byte(`"synthetic-cause"`), nil
+}
+func (e *parseErrorPrivacyCause) LogValue() slog.Value {
+	e.calls++
+	return slog.StringValue("synthetic-cause")
 }
 
 func TestParseRejectsDTDWithoutResolvingEntities(t *testing.T) {
@@ -359,8 +456,9 @@ func TestParseRejectsMisplacedOrRepeatedComponentAnnotations(t *testing.T) {
  <attributeGroup name="G"><attribute name="a"/><annotation/></attributeGroup>
 </schema>`,
 	} {
-		if _, err := xsd.Parse(context.Background(), []byte(schema), xsd.ParseOptions{}); err == nil ||
-			!strings.Contains(err.Error(), "annotation must be the first and only annotation child") {
+		_, err := xsd.Parse(context.Background(), []byte(schema), xsd.ParseOptions{})
+		var parseErr *xsd.ParseError
+		if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), "annotation must be the first and only annotation child") {
 			t.Fatalf("Parse(%s) error = %v, want invalid annotation placement", schema, err)
 		}
 	}
@@ -515,7 +613,8 @@ func TestParseRejectsUseOnGlobalAttribute(t *testing.T) {
 		`<schema xmlns="http://www.w3.org/2001/XMLSchema">
  <attribute name="value" use="required"/>
 </schema>`), xsd.ParseOptions{})
-	if err == nil || !strings.Contains(err.Error(), "global attribute declaration cannot specify use") {
+	var parseErr *xsd.ParseError
+	if !errors.As(err, &parseErr) || !strings.Contains(parseErr.Err.Error(), "global attribute declaration cannot specify use") {
 		t.Fatalf("Parse() error = %v, want global attribute use rejection", err)
 	}
 }

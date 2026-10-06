@@ -8,6 +8,7 @@
 - [Datatypes](datatypes.md)
 - [Resolution and catalogs](resolution.md)
 - [Security and limits](security.md)
+- [Versioned threat model](security-threat-model-v1.md)
 - [Specification decisions](specification-decisions.md)
 - [Builders and serialization](builders.md)
 - [WSDL integration](wsdl-integration.md)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"testing"
@@ -13,6 +14,43 @@ import (
 	"github.com/faustbrian/go-xsd/compile"
 	"github.com/faustbrian/go-xsd/validate"
 )
+
+func TestValidateReaderCancellationAtEOF(t *testing.T) {
+	validator := newValidator(t)
+	for _, canceled := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		reader := &cancelAtEOFReader{source: []byte(`<amount xmlns="urn:order">1.5</amount>`)}
+		if canceled {
+			reader.cancel = cancel
+		}
+		result, err := validator.ValidateReader(ctx, reader)
+		cancel()
+		if canceled {
+			if !errors.Is(err, context.Canceled) || !reflect.DeepEqual(result, validate.Result{}) {
+				t.Fatalf("canceled ValidateReader = %#v, %v; want zero result and context.Canceled", result, err)
+			}
+		} else if err != nil || !result.Valid || len(result.Diagnostics) != 0 {
+			t.Fatalf("uncanceled ValidateReader = %#v, %v; want valid result", result, err)
+		}
+	}
+}
+
+type cancelAtEOFReader struct {
+	source []byte
+	cancel context.CancelFunc
+}
+
+func (r *cancelAtEOFReader) Read(buffer []byte) (int, error) {
+	n := copy(buffer, r.source)
+	r.source = r.source[n:]
+	if len(r.source) != 0 {
+		return n, nil
+	}
+	if r.cancel != nil {
+		r.cancel()
+	}
+	return n, io.EOF
+}
 
 func TestValidateReaderMatchesByteValidation(t *testing.T) {
 	t.Parallel()

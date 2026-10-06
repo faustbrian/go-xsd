@@ -8,11 +8,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+
+	"github.com/faustbrian/go-xsd/internal/errsafe"
 )
 
 const defaultFileMaxBytes int64 = 16 << 20
 
-// ErrLimitExceeded reports a resolver resource larger than its explicit cap.
+// ErrLimitExceeded reports a constructor count/input-byte limit or a resolver
+// resource exceeding its content-byte cap.
 var ErrLimitExceeded = errors.New("xsd resolve: resource limit exceeded")
 
 // FileOptions configures an opt-in, root-confined file resolver.
@@ -31,7 +34,8 @@ type File struct {
 
 // NewFile opens a traversal-resistant filesystem root. The caller must close
 // the returned resolver when it is no longer needed.
-func NewFile(options FileOptions) (*File, error) {
+func NewFile(options FileOptions) (resolver *File, err error) {
+	defer func() { err = errsafe.Wrap("xsd resolve: failed", err) }()
 	if options.Root == "" {
 		return nil, errors.New("xsd resolve: file root is required")
 	}
@@ -54,7 +58,8 @@ func NewFile(options FileOptions) (*File, error) {
 }
 
 // Close releases the opened filesystem root.
-func (r *File) Close() error {
+func (r *File) Close() (err error) {
+	defer func() { err = errsafe.Wrap("xsd resolve: failed", err) }()
 	if r == nil || r.root == nil {
 		return nil
 	}
@@ -62,7 +67,8 @@ func (r *File) Close() error {
 }
 
 // Resolve reads a fresh owned copy of a confined file resource.
-func (r *File) Resolve(ctx context.Context, request Request) (Resource, error) {
+func (r *File) Resolve(ctx context.Context, request Request) (resource Resource, err error) {
+	defer finishResolve(ctx, &resource, &err)
 	if err := ctx.Err(); err != nil {
 		return Resource{}, err
 	}
@@ -86,9 +92,9 @@ func (r *File) Resolve(ctx context.Context, request Request) (Resource, error) {
 	file, err := r.root.Open(relative)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Resource{}, fmt.Errorf("%w: %s", ErrNotFound, request.URI)
+			return Resource{}, errors.Join(ErrNotFound, err)
 		}
-		return Resource{}, fmt.Errorf("%w: %s: %v", ErrAccessDenied, request.URI, err)
+		return Resource{}, errors.Join(ErrAccessDenied, err)
 	}
 	content, err := io.ReadAll(io.LimitReader(file, r.maxBytes+1))
 	if operationErr := errors.Join(err, file.Close()); operationErr != nil {

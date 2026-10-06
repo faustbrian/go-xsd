@@ -30,14 +30,14 @@ func TestDerivationSetReportsMembershipAndLexicalValue(t *testing.T) {
 }
 
 func TestParserAndSerializerCoverNestedQNameBranches(t *testing.T) {
-	element, err := parseElement(xml.StartElement{Attr: []xml.Attr{
+	element, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseElement(xml.StartElement{Attr: []xml.Attr{
 		{Name: xml.Name{Local: "form"}, Value: "qualified"},
 	}}, nil)
 	if err != nil || element.Form != FormQualified {
 		t.Fatalf("parseElement() = %#v, %v", element, err)
 	}
 
-	attribute, err := parseAttributeUse(xml.StartElement{Attr: []xml.Attr{
+	attribute, err := newSchemaParser(context.Background(), nil, ParseOptions{}).parseAttributeUse(xml.StartElement{Attr: []xml.Attr{
 		{Name: xml.Name{Space: "xmlns", Local: "t"}, Value: "urn:test"},
 		{Name: xml.Name{Local: "ref"}, Value: "t:code"},
 	}}, nil)
@@ -48,7 +48,7 @@ func TestParserAndSerializerCoverNestedQNameBranches(t *testing.T) {
 	decoder, start := decoderAtStart(t, `<element xmlns="`+Namespace+`"><complexType><sequence></complexType></element>`)
 	done := make(chan error, 1)
 	go func() {
-		done <- parseElementBody(decoder, start, &Element{}, nil)
+		done <- newSchemaParser(context.Background(), nil, ParseOptions{}).parseElementBody(decoder, start, &Element{}, nil)
 	}()
 	var parseErr error
 	select {
