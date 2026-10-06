@@ -1,5 +1,34 @@
 # Migration and compatibility
 
+## Preparing for v2
+
+Main now uses `github.com/faustbrian/go-xsd/v2`. Source stays at the repository
+root; the new major is published with a root `v2.0.0` Git tag only after release
+qualification. This candidate is not yet a published v2 release. Existing v1
+consumers must keep their unsuffixed imports and selected v1 dependency.
+
+When v2 is published, insert `/v2` before each package suffix, including
+`/compile`, `/resolve` and `/validate`. Public APIs exposing XSD values acquire
+new Go type identities; libraries exposing them need their own compatibility
+decision rather than silently replacing a v1 dependency.
+
+Review finite parser, compiler, validator and resolver allowances against
+representative valid inputs. In addition to the parser allowances below,
+compiler particle copies, validator bytes and namespace entries, and Memory
+and Catalog constructor resources have independent limits. Configure explicit
+finite policies for trusted workloads that exceed defaults; do not assume a
+larger serialized-byte limit raises other allowances. Pattern class-subtraction
+depth has a separate ceiling of 256.
+
+Default compiler/resolver errors and Diagnostic, Location and ParseError
+formatting, JSON and logging are redacted. Prefer sentinel/cause classification
+with `errors.Is` and `errors.As`; use exported fields, unwrapping and explicit
+detailed projections only at trusted inspection boundaries. Consumers relying
+on old error text or structured diagnostic output must migrate deliberately.
+
+WSDL currently exposes v1 XSD types and requires a separately released adoption.
+XSD's local WSDL-shaped tests do not certify that public consumer migration.
+
 The next-major candidate adds independent `ParseOptions.MaxNamespaceEntries`
 and `MaxModelBytes` allowances (zero selects 1,000,000 entries and 64 MiB).
 Valid schemas exceeding cumulative namespace-copy/declaration or retained

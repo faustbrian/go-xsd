@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/faustbrian/go-xsd/internal/errsafe"
+	"github.com/faustbrian/go-xsd/v2/internal/errsafe"
 )
 
 func TestDefaultOutputRetainsOnlyCategoryAndTrustedCause(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-xsd/datatype"
+	"github.com/faustbrian/go-xsd/v2/datatype"
 )
 
 func nestedSubtraction(depth int) string {

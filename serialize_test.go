@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/compile"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/compile"
 )
 
 func TestMarshalWithOptionsEnforcesResourceLimits(t *testing.T) {

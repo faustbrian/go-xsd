@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestDiagnosticAndLocationDefaultPrivacy(t *testing.T) {

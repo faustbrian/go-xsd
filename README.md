@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
-[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-xsd.svg)](https://pkg.go.dev/github.com/faustbrian/go-xsd)
+[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-xsd/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-xsd/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-xsd?sort=semver)](https://github.com/faustbrian/go-xsd/releases)
 [![Go](https://img.shields.io/badge/go-1.27.0-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,6 +19,9 @@ and SOAP tooling without performing implicit file or network access.
 > documented XML Schema 1.0 surface is evidence-mapped and the pinned XSTS
 > baseline passes; neither statement claims support for XML Schema 1.1 or for
 > behavior outside the published matrix.
+>
+> Main prepares the incompatible v2 module; v2 is not yet published or release
+> qualified. See [migration guidance](docs/migration.md) before adopting it.
 
 ## Install
 
@@ -27,6 +30,10 @@ The stable v1 release requires Go 1.27.0.
 ```sh
 go get github.com/faustbrian/go-xsd@v1
 ```
+
+After v2 is published, install `github.com/faustbrian/go-xsd/v2@v2` and add
+`/v2` before each package suffix. Do not use this candidate's security claims
+as promises about the existing v1 release.
 
 ## Quick start
 

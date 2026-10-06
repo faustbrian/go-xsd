@@ -3,7 +3,7 @@ package datatype_test
 import (
 	"testing"
 
-	"github.com/faustbrian/go-xsd/datatype"
+	"github.com/faustbrian/go-xsd/v2/datatype"
 )
 
 func FuzzParseDecimal(f *testing.F) {

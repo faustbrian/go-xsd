@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/faustbrian/go-xsd/internal/errsafe"
+	"github.com/faustbrian/go-xsd/v2/internal/errsafe"
 )
 
 const defaultFileMaxBytes int64 = 16 << 20

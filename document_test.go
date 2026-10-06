@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestParseErrorDefaultsPreserveTrustedInspection(t *testing.T) {

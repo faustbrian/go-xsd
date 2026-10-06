@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-xsd"
+	"github.com/faustbrian/go-xsd/v2"
 )
 
 func TestParseOwnedNamespaceAdmission(t *testing.T) {

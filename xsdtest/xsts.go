@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/compile"
-	"github.com/faustbrian/go-xsd/resolve"
-	"github.com/faustbrian/go-xsd/validate"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/compile"
+	"github.com/faustbrian/go-xsd/v2/resolve"
+	"github.com/faustbrian/go-xsd/v2/validate"
 )
 
 // Report summarizes one official test-set run.

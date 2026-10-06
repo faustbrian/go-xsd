@@ -5,14 +5,14 @@
   "modules": [
     {
       "directory": ".",
-      "module_path": "github.com/faustbrian/go-xsd",
+      "module_path": "github.com/faustbrian/go-xsd/v2",
       "go_version": "1.27.0",
       "packages": [
         {
           "module_directory": ".",
           "directory": ".",
           "name": "xsd",
-          "import_path": "github.com/faustbrian/go-xsd",
+          "import_path": "github.com/faustbrian/go-xsd/v2",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -24,7 +24,7 @@
           "module_directory": ".",
           "directory": "builder",
           "name": "builder",
-          "import_path": "github.com/faustbrian/go-xsd/builder",
+          "import_path": "github.com/faustbrian/go-xsd/v2/builder",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -36,7 +36,7 @@
           "module_directory": ".",
           "directory": "compile",
           "name": "compile",
-          "import_path": "github.com/faustbrian/go-xsd/compile",
+          "import_path": "github.com/faustbrian/go-xsd/v2/compile",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -48,7 +48,7 @@
           "module_directory": ".",
           "directory": "datatype",
           "name": "datatype",
-          "import_path": "github.com/faustbrian/go-xsd/datatype",
+          "import_path": "github.com/faustbrian/go-xsd/v2/datatype",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -60,7 +60,7 @@
           "module_directory": ".",
           "directory": "internal/errsafe",
           "name": "errsafe",
-          "import_path": "github.com/faustbrian/go-xsd/internal/errsafe",
+          "import_path": "github.com/faustbrian/go-xsd/v2/internal/errsafe",
           "kind": "internal",
           "production": true,
           "executable": true,
@@ -72,7 +72,7 @@
           "module_directory": ".",
           "directory": "resolve",
           "name": "resolve",
-          "import_path": "github.com/faustbrian/go-xsd/resolve",
+          "import_path": "github.com/faustbrian/go-xsd/v2/resolve",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -84,7 +84,7 @@
           "module_directory": ".",
           "directory": "validate",
           "name": "validate",
-          "import_path": "github.com/faustbrian/go-xsd/validate",
+          "import_path": "github.com/faustbrian/go-xsd/v2/validate",
           "kind": "public",
           "production": true,
           "executable": true,
@@ -96,7 +96,7 @@
           "module_directory": ".",
           "directory": "xsdtest",
           "name": "xsdtest",
-          "import_path": "github.com/faustbrian/go-xsd/xsdtest",
+          "import_path": "github.com/faustbrian/go-xsd/v2/xsdtest",
           "kind": "test support",
           "production": false,
           "executable": true,
@@ -113,7 +113,7 @@
       "family_label": "Protocols And Descriptions",
       "family_description": "Standards, envelopes, schemas, descriptions, signatures, and wire interoperability.",
       "family_order": 3,
-      "version": "1.1.0",
+      "version": "2.0.0",
       "tag_prefix": "v",
       "owned_dependencies": [],
       "reverse_owned_dependencies": [
@@ -235,16 +235,16 @@
         ],
         "public_package_identifier": "xsd",
         "primary_entry_packages": [
-          "github.com/faustbrian/go-xsd"
+          "github.com/faustbrian/go-xsd/v2"
         ],
         "package_selection": {
-          "github.com/faustbrian/go-xsd": "Use to parse, model, and deterministically serialize bounded XML Schema 1.0 documents.",
-          "github.com/faustbrian/go-xsd/builder": "Use to construct checked XML Schema documents through a mutable builder and explicit Build validation boundary.",
-          "github.com/faustbrian/go-xsd/compile": "Use to resolve and compile bounded schema graphs into immutable concurrent validation sets.",
-          "github.com/faustbrian/go-xsd/datatype": "Use for XML Schema datatype lexical validation, canonicalization, ordering, and immutable numeric values.",
-          "github.com/faustbrian/go-xsd/resolve": "Use to supply explicit deny-by-default, in-memory, catalog, chained, or root-confined file resolution.",
-          "github.com/faustbrian/go-xsd/validate": "Use to validate bounded XML instances or caller-owned trees against an immutable compiled schema set.",
-          "github.com/faustbrian/go-xsd/xsdtest": "Use in tests to execute the pinned XML Schema Test Suite and inspect attributable conformance results."
+          "github.com/faustbrian/go-xsd/v2": "Use to parse, model, and deterministically serialize bounded XML Schema 1.0 documents.",
+          "github.com/faustbrian/go-xsd/v2/builder": "Use to construct checked XML Schema documents through a mutable builder and explicit Build validation boundary.",
+          "github.com/faustbrian/go-xsd/v2/compile": "Use to resolve and compile bounded schema graphs into immutable concurrent validation sets.",
+          "github.com/faustbrian/go-xsd/v2/datatype": "Use for XML Schema datatype lexical validation, canonicalization, ordering, and immutable numeric values.",
+          "github.com/faustbrian/go-xsd/v2/resolve": "Use to supply explicit deny-by-default, in-memory, catalog, chained, or root-confined file resolution.",
+          "github.com/faustbrian/go-xsd/v2/validate": "Use to validate bounded XML instances or caller-owned trees against an immutable compiled schema set.",
+          "github.com/faustbrian/go-xsd/v2/xsdtest": "Use in tests to execute the pinned XML Schema Test Suite and inspect attributable conformance results."
         },
         "lifecycle_status": "active",
         "maturity": "stable",
@@ -271,12 +271,12 @@
         "adapters": [],
         "companions": [
           "github.com/faustbrian/go-wsdl",
-          "github.com/faustbrian/go-xsd/builder",
-          "github.com/faustbrian/go-xsd/compile",
-          "github.com/faustbrian/go-xsd/datatype",
-          "github.com/faustbrian/go-xsd/resolve",
-          "github.com/faustbrian/go-xsd/validate",
-          "github.com/faustbrian/go-xsd/xsdtest"
+          "github.com/faustbrian/go-xsd/v2/builder",
+          "github.com/faustbrian/go-xsd/v2/compile",
+          "github.com/faustbrian/go-xsd/v2/datatype",
+          "github.com/faustbrian/go-xsd/v2/resolve",
+          "github.com/faustbrian/go-xsd/v2/validate",
+          "github.com/faustbrian/go-xsd/v2/xsdtest"
         ],
         "supported_go": {
           "minimum": "1.27.0",
@@ -303,7 +303,7 @@
           "examples": "example_test.go",
           "faq": "docs/faq.md",
           "changelog": "CHANGELOG.md",
-          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-xsd",
+          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-xsd/v2",
           "ecosystem_index": "https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md"
         },
         "known_good_compatibility_sets": [],

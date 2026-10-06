@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
+	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
 func TestApplySimpleContentDerivation(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/faustbrian/go-xsd/xsdtest"
+	"github.com/faustbrian/go-xsd/v2/xsdtest"
 )
 
 func TestOfficialXSTS(t *testing.T) {

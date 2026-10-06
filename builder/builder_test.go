@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	xsd "github.com/faustbrian/go-xsd"
-	"github.com/faustbrian/go-xsd/builder"
-	"github.com/faustbrian/go-xsd/compile"
+	xsd "github.com/faustbrian/go-xsd/v2"
+	"github.com/faustbrian/go-xsd/v2/builder"
+	"github.com/faustbrian/go-xsd/v2/compile"
 )
 
 func TestBuildProducesAnIsolatedCompilableSchema(t *testing.T) {

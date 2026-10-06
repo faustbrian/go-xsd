@@ -1,11 +1,17 @@
 # Changelog
 
-All notable released changes are documented here. The module follows stable v1
-compatibility.
+All notable released changes are documented here. Compatibility follows each
+published major; main currently prepares the incompatible v2 module.
 
 ## Unreleased
 
 ### Changed (next major)
+
+- Prepare the root `github.com/faustbrian/go-xsd/v2` module identity for the
+  security admission and safe-default reporting changes below. Insert `/v2`
+  before package suffixes when adopting the future release. Existing v1
+  dependencies and public consumer types remain on their selected v1 line;
+  publication and release qualification are not implied by this preparation.
 
 - Bound schema-parser namespace copies/declarations and retained string/copy
   work independently of serialized input. Add finite zero-default allowances
