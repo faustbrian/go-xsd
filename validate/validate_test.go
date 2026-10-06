@@ -40,6 +40,75 @@ type cancelAtEOFReader struct {
 	cancel context.CancelFunc
 }
 
+func TestValidateReaderCancellationAfterParsedPrefix(t *testing.T) {
+	validator := newValidator(t)
+	for _, test := range []struct {
+		name      string
+		canceled  bool
+		readError error
+	}{
+		{name: "complete reader"},
+		{name: "cancel with tail", canceled: true},
+		{name: "cancel with reader error", canceled: true, readError: io.ErrUnexpectedEOF},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			reader := &cancelAfterPrefixReader{
+				prefix: []byte(`<amount xmlns="urn:order">`),
+				tail:   []byte(`1.5</amount>`), readError: test.readError,
+			}
+			if test.canceled {
+				reader.cancel = cancel
+			}
+			result, err := validator.ValidateReader(ctx, reader)
+			if len(reader.prefix) != 0 || reader.tailReads == 0 {
+				t.Fatal("reader did not reach the boundary after the opening token")
+			}
+			if test.canceled {
+				if !errors.Is(err, context.Canceled) || !reflect.DeepEqual(result, validate.Result{}) {
+					t.Fatalf("canceled partial reader = %#v, %v", result, err)
+				}
+			} else if err != nil || !result.Valid || len(result.Diagnostics) != 0 {
+				t.Fatalf("complete reader = %#v, %v", result, err)
+			}
+			result, err = validator.Validate(context.Background(), []byte(`<amount xmlns="urn:order">1.5</amount>`))
+			if err != nil || !result.Valid || len(result.Diagnostics) != 0 {
+				t.Fatalf("validator reuse = %#v, %v", result, err)
+			}
+		})
+	}
+}
+
+type cancelAfterPrefixReader struct {
+	prefix    []byte
+	tail      []byte
+	cancel    context.CancelFunc
+	readError error
+	tailReads int
+}
+
+func (r *cancelAfterPrefixReader) Read(buffer []byte) (int, error) {
+	if len(r.prefix) != 0 {
+		n := copy(buffer, r.prefix)
+		r.prefix = r.prefix[n:]
+		return n, nil
+	}
+	r.tailReads++
+	if r.cancel != nil {
+		r.cancel()
+	}
+	if r.readError != nil {
+		return 0, r.readError
+	}
+	n := copy(buffer, r.tail)
+	r.tail = r.tail[n:]
+	if n == 0 {
+		return 0, io.EOF
+	}
+	return n, nil
+}
+
 func (r *cancelAtEOFReader) Read(buffer []byte) (int, error) {
 	n := copy(buffer, r.source)
 	r.source = r.source[n:]
