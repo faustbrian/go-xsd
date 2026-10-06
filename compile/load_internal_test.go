@@ -105,6 +105,88 @@ func TestLoadOwnerCancellationPreventsCacheAndResolverWork(t *testing.T) {
 	}
 }
 
+func TestLoadCancellationDuringResolutionStopsResourcePublication(t *testing.T) {
+	const resourceURI = "https://example.test/catalog.xsd"
+	content := []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"/>`)
+	for _, cached := range []bool{false, true} {
+		for _, canceled := range []bool{false, true} {
+			ctx, cancel := context.WithCancel(context.Background())
+			seed, err := xsd.Parse(ctx, content, xsd.ParseOptions{SystemID: resourceURI})
+			if err != nil {
+				cancel()
+				t.Fatal(err)
+			}
+			resolverCalls := 0
+			state := loadState(t, funcResolver(func(context.Context, resolve.Request) (resolve.Resource, error) {
+				resolverCalls++
+				if canceled {
+					cancel()
+				}
+				return resolve.Resource{URI: resourceURI, Content: content}, nil
+			}), 1024)
+			state.ctx = ctx
+			wantResources := 0
+			if cached {
+				state.resources[resourceURI] = resourceDocument{document: seed}
+				wantResources = 1
+			}
+			document, identity, err := state.load(ctx, xsd.SchemaReference{})
+			cancel()
+			wantBytes := int64(0)
+			if canceled {
+				if document != nil || identity != "" || !errors.Is(err, context.Canceled) {
+					t.Errorf("canceled catalog load (cached=%v) published a resource", cached)
+				}
+			} else {
+				if err != nil || document == nil || document.SystemID != resourceURI || identity != resourceURI {
+					t.Errorf("live catalog load (cached=%v) changed resource semantics", cached)
+				}
+				if !cached {
+					wantBytes = int64(len(content))
+					wantResources = 1
+				}
+			}
+			if resolverCalls != 1 || state.bytes != wantBytes || len(state.resources) != wantResources {
+				t.Errorf("catalog load (cached=%v, canceled=%v) changed resolution or resource ownership", cached, canceled)
+			}
+			if cached && state.resources[resourceURI].document != seed {
+				t.Error("catalog load replaced the existing cached document")
+			}
+		}
+	}
+}
+
+func TestCompileCancellationDuringResolutionDiscardsSetAndAllowsReuse(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelDuringResolution := true
+	resolverCalls := 0
+	compiler, err := New(Options{Resolver: funcResolver(func(_ context.Context, request resolve.Request) (resolve.Resource, error) {
+		resolverCalls++
+		if cancelDuringResolution {
+			cancel()
+		}
+		return resolve.Resource{URI: request.URI, Content: []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"><element name="value" type="string"/></schema>`)}, nil
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := Source{URI: "https://example.test/root.xsd", Content: []byte(`<schema xmlns="http://www.w3.org/2001/XMLSchema"><include schemaLocation="child.xsd"/></schema>`)}
+	set, err := compiler.Compile(ctx, source)
+	if set != nil || !errors.Is(err, context.Canceled) || resolverCalls != 1 {
+		t.Fatal("cancellation during resolution did not discard the public schema set")
+	}
+	cancelDuringResolution = false
+	set, err = compiler.Compile(context.Background(), source)
+	if err != nil || set == nil || resolverCalls != 2 {
+		t.Fatal("canceled resolution poisoned a subsequent live compilation")
+	}
+	element, ok := set.Element(xsd.QName{Local: "value"})
+	if !ok || element.Type != (xsd.QName{Namespace: xsd.Namespace, Local: "string"}) {
+		t.Fatal("live resolver changed included declaration semantics")
+	}
+}
+
 func loadState(t *testing.T, resolver resolve.Resolver, maxBytes int64) *compileState {
 	t.Helper()
 	compiler, err := New(Options{Resolver: resolver, Limits: Limits{MaxBytes: maxBytes}})

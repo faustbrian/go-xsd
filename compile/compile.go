@@ -4783,6 +4783,9 @@ func (s *compileState) load(
 	if err != nil {
 		return nil, "", err
 	}
+	if err := s.contextError(); err != nil {
+		return nil, "", err
+	}
 	if reference.URI != "" && resource.URI != reference.URI {
 		return nil, "", fmt.Errorf(
 			"%w: requested %q, received %q",

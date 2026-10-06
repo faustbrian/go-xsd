@@ -7,6 +7,11 @@ published major; main currently prepares the incompatible v2 module.
 
 ### Changed (next major)
 
+- Observe compiler-owner cancellation after resource resolution, before
+  returning catalog-cached documents or charging and parsing new resources.
+  Canceled compilation still publishes no schema set and remains reusable
+  for an independent live invocation.
+
 - Prepare the root `github.com/faustbrian/go-xsd/v2` module identity for the
   security admission and safe-default reporting changes below. Insert `/v2`
   before package suffixes when adopting the future release. Existing v1
