@@ -298,7 +298,10 @@ func (p *schemaParser) parseDocument(decoder *xml.Decoder, root xml.StartElement
 	); err != nil {
 		return nil, located(decoder, systemID, err)
 	}
-	if !p.chargeBytes(len(systemID)) || !p.chargeBytes(len(systemID)) || !p.admitRootNamespaces(root) {
+	if !p.chargeBytes(len(systemID)) {
+		return nil, p.err
+	}
+	if !p.chargeBytes(len(systemID)) || !p.admitRootNamespaces(root) {
 		return nil, p.err
 	}
 	document := &Document{
