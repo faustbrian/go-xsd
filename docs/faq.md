@@ -17,11 +17,13 @@ alternatives, open content, and datatype changes would be misleading.
 
 ## Is the package fully XML Schema 1.0 conformant?
 
-The stable XML Schema 1.0 scope is fully implemented in the live requirement
-matrix. The pinned XSTS gate passes every accepted expectation, and the
-production-coverage gate is 100%. The 90 upstream XSTS expectations marked
-`queried` are reported separately because the suite does not assign them a
-pass/fail result.
+The published v1 XML Schema 1.0 scope is described by its requirement matrix
+and pinned XSTS baseline; neither establishes a blanket v2 conformance claim.
+The 90 upstream XSTS expectations marked `queried` are reported separately
+because the suite does not assign them a pass/fail result. Main's coverage
+policy collects genuine per-package statement evidence, not a universal
+percentage certificate. See [verification](../CONTRIBUTING.md#verification)
+for the separate risk-based and release requirements.
 
 ## Are compiled sets safe to share?
 

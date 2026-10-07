@@ -6,6 +6,10 @@ manifest:
   packages: packages.json
 evidence:
   root: .verification
+coverage:
+  modules:
+    - module: .
+      mode: evidence
 mutation:
   root: .verification/mutation
   imports:
