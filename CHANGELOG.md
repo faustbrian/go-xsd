@@ -7,6 +7,10 @@ published major; main currently prepares the incompatible v2 module.
 
 ### Changed (next major)
 
+- Stop resolver-chain fallback when cancellation becomes observable after a
+  child returns. Cancellation retains its standard cause and publishes no
+  resource; a fresh live invocation still uses ordinary not-found fallback.
+
 - Observe compiler-owner cancellation after resource resolution, before
   returning catalog-cached documents or charging and parsing new resources.
   Canceled compilation still publishes no schema set and remains reusable

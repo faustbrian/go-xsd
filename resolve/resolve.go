@@ -157,6 +157,9 @@ func (c chain) Resolve(ctx context.Context, request Request) (resource Resource,
 			continue
 		}
 		resource, err := resolver.Resolve(ctx, request)
+		if canceled := ctx.Err(); canceled != nil {
+			return Resource{}, canceled
+		}
 		if err == nil {
 			return resource, nil
 		}
