@@ -62,3 +62,25 @@ func TestParsePreparedOwnerCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestParseValidatedWithoutPreparedOwner(t *testing.T) {
+	const source = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:annotation><xs:appinfo id="a"/></xs:annotation></xs:schema>`
+	document, err := parseValidated(context.Background(), []byte(source), ParseOptions{})
+	if err != nil || document == nil || len(document.Annotations) != 1 || len(document.Annotations[0].AppInformation) != 1 || document.Annotations[0].AppInformation[0].ID != "a" {
+		t.Fatal("valid private parse without an existing owner lost its document")
+	}
+}
+
+func TestParseOwnerTokenPreservesAdmissionFailure(t *testing.T) {
+	const source = `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:annotation/></xs:schema>`
+	owner := newSchemaParser(context.Background(), []byte(source), ParseOptions{MaxModelBytes: 1})
+	if owner.chargeBytes(2) || !errors.Is(owner.err, ErrLimitExceeded) {
+		t.Fatal("finite owner admission did not establish a limit refusal")
+	}
+	decoder, _ := decoderAtStart(t, source)
+	before := decoder.InputOffset()
+	token, err := owner.token(decoder)
+	if token != nil || err != owner.err || !errors.Is(err, ErrLimitExceeded) || decoder.InputOffset() != before {
+		t.Fatal("sticky admission refusal lost its cause or consumed another token")
+	}
+}

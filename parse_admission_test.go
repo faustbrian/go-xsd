@@ -225,6 +225,7 @@ func TestParseOwnedNamespaceWorkBoundaries(t *testing.T) {
 	}{
 		{`<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element xmlns:t="urn:t" name="a"/></xs:schema>`, 1},
 		{`<schema xmlns="http://www.w3.org/2001/XMLSchema"><element xmlns="http://www.w3.org/2001/XMLSchema" name="a"/></schema>`, 2},
+		{`<schema xmlns="http://www.w3.org/2001/XMLSchema"><element xmlns="http://www.w3.org/2001/XMLSchema" name="a"/></schema>`, 4},
 	} {
 		document, err := xsd.Parse(context.Background(), []byte(test.source), xsd.ParseOptions{MaxNamespaceEntries: test.refused})
 		if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
@@ -257,5 +258,20 @@ func TestParseOwnedNamespaceWorkBoundaries(t *testing.T) {
 	document, err = xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxModelBytes: 2*namespaceBytes + 2})
 	if err != nil || document == nil || len(document.Elements) != 1 || document.Elements[0].Name != "a" || document.Elements[0].Default != "b" || document.Elements[0].ValueNamespaces[""] != xsd.Namespace {
 		t.Fatal("exact retained value allowance changed default/scope")
+	}
+}
+
+func TestParseRootMetadataIsNotANamespaceDeclaration(t *testing.T) {
+	source := []byte(`<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="a"/>`)
+	const maximum = int64(2 + len(xsd.Namespace) + 1)
+	for _, limit := range []int64{maximum - 1, maximum} {
+		document, err := xsd.Parse(context.Background(), source, xsd.ParseOptions{MaxNamespaceEntries: 1, MaxModelBytes: limit})
+		if limit < maximum {
+			if document != nil || !errors.Is(err, xsd.ErrLimitExceeded) {
+				t.Fatal("root version metadata bypassed its model allowance")
+			}
+		} else if err != nil || document == nil || document.Version != "a" || document.Namespaces["xs"] != xsd.Namespace {
+			t.Fatal("ordinary root metadata consumed a namespace entry or changed identity")
+		}
 	}
 }
