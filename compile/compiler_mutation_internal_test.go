@@ -167,6 +167,50 @@ func emptyValidationStatePointer() *compileState {
 	return &state
 }
 
+func TestHealthyOwnerAllGroupPreservesUPAPositions(t *testing.T) {
+	state := upaState{compile: emptyValidationStatePointer(), follow: map[int]upaPositions{}}
+	info := state.group(&xsd.ModelGroup{Compositor: xsd.All, Particles: []xsd.Particle{
+		{MinOccurs: 1, MaxOccurs: 1, Element: &xsd.Element{Name: "left"}},
+		{MinOccurs: 1, MaxOccurs: 1, Element: &xsd.Element{Name: "right"}},
+	}}, "")
+	if info.nullable || len(info.first) != 2 || len(info.last) != 2 || len(state.follow) != 2 {
+		t.Fatalf("required All group lost positions: nullable=%v first=%d last=%d follow=%d", info.nullable, len(info.first), len(info.last), len(state.follow))
+	}
+	for position, name := range []string{"left", "right"} {
+		first, firstOK := info.first[position]
+		last, lastOK := info.last[position]
+		if !firstOK || !lastOK || first.name == nil || last.name == nil || *first.name != (xsd.QName{Local: name}) || *last.name != (xsd.QName{Local: name}) {
+			t.Fatalf("position %d lost its element identity", position)
+		}
+		following := state.follow[position]
+		other, found := following[1-position]
+		if len(following) != 1 || !found || other.name == nil || *other.name != (xsd.QName{Local: []string{"right", "left"}[position]}) {
+			t.Fatalf("position %d lost the other permitted All-group successor", position)
+		}
+	}
+}
+
+func TestHealthyOwnerDepthWrappersAcceptSimpleString(t *testing.T) {
+	stringType := xsd.QName{Namespace: xsd.Namespace, Local: "string"}
+	restriction := xsd.SimpleType{Variety: xsd.SimpleRestriction, Base: stringType}
+	state := emptyValidationStatePointer()
+	if !state.simpleConstraintValidDepth(stringType, "value", 0) {
+		t.Error("healthy owner refused named string value at valid depth")
+	}
+	if !state.inlineConstraintValidDepth(restriction, "value", 0) {
+		t.Error("healthy owner refused inline string value at valid depth")
+	}
+	if state.simpleConstraintValidDepth(stringType, "value", defaultMaxDepth+1) || state.inlineConstraintValidDepth(restriction, "value", defaultMaxDepth+1) {
+		t.Fatal("depth wrapper admitted an over-depth string value")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	state.ctx = ctx
+	if state.simpleConstraintValidDepth(stringType, "value", 0) || state.inlineConstraintValidDepth(restriction, "value", 0) {
+		t.Fatal("canceled owner admitted a string value")
+	}
+}
+
 func TestExplicitAndImplicitValueConstraintFlags(t *testing.T) {
 	t.Parallel()
 
