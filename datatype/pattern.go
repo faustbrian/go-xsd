@@ -357,7 +357,7 @@ func rangeTableSet(table *unicode.RangeTable, contexts ...context.Context) runeS
 				return nil
 			}
 			value := low + offset*stride
-			result = append(result, runeRange{rune(value), rune(value)})
+			result = append(result, runeRange{rune(value), rune(value)}) // #nosec G115 -- R16 stride expansion remains at or below its uint16 Hi endpoint, within rune range.
 		}
 	}
 	for _, item := range table.R32 {
@@ -378,7 +378,7 @@ func rangeTableSet(table *unicode.RangeTable, contexts ...context.Context) runeS
 				return nil
 			}
 			value := item.Lo + offset*item.Stride
-			result = append(result, runeRange{rune(value), rune(value)})
+			result = append(result, runeRange{rune(value), rune(value)}) // #nosec G115 -- Callers use standard unicode.Categories tables; stride expansion stays at or below Hi <= utf8.MaxRune.
 		}
 	}
 	return result.normalized(contexts...).intersect(xmlUniverse, contexts...)

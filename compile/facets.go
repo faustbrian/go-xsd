@@ -61,7 +61,7 @@ func (s *compileState) restrictionConstraintFacetsValidContext(
 		return false
 	}
 	shape := s.restrictionBaseShape(typeDefinition)
-	length := uint64(utf8.RuneCountInString(lexical))
+	length := uint64(utf8.RuneCountInString(lexical)) // #nosec G115 -- RuneCountInString returns a nonnegative int, representable by uint64 on every supported architecture.
 	switch shape.variety {
 	case listShape:
 		length = uint64(len(strings.Fields(lexical)))

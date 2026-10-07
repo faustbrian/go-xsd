@@ -7,6 +7,11 @@ published major; main currently prepares the incompatible v2 module.
 
 ### Changed (next major)
 
+- Confine every XSTS metadata, schema, instance and imported-schema read with
+  one run-owned directory capability. Relative in-root symlinks remain usable;
+  outside-root targets and absolute symlinks are rejected.
+  Fixture-access refusals cannot satisfy an expected invalid-schema result.
+
 - Stop resolver-chain fallback when cancellation becomes observable after a
   child returns. Cancellation retains its standard cause and publishes no
   resource; a fresh live invocation still uses ordinary not-found fallback.

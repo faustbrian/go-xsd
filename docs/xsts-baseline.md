@@ -1,7 +1,18 @@
 # XSTS baseline
 
-The root-confined XSTS harness was verified against every test-set metadata
-file in the pinned archive.
+The XSTS harness was verified against every test-set metadata file in the
+pinned archive. These historical results are conformance evidence, not proof
+of filesystem confinement.
+
+The next-major harness uses one `os.Root` directory capability for metadata,
+schemas, instances and imported schemas. Relative symlinks within the suite
+root are supported; outside-root targets and absolute symlinks are rejected.
+Fixture-access refusals are reported as errors, not passing invalid-schema
+expectations. Ordinary schema invalidity retains its conformance meaning.
+The caller selects and trusts the root directory. This is not a sandbox for
+device files, mounted filesystems or malicious changes to the root itself.
+Confinement relies on Go's `os.Root` guarantees on the supported native
+platforms; it must not be claimed for JavaScript targets.
 
 - Date: 2026-07-19
 - Archive: XSTS 2007-06-20

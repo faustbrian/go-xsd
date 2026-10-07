@@ -17,6 +17,8 @@ import (
 	"github.com/faustbrian/go-xsd/v2/validate"
 )
 
+var errFixtureRead = errors.New("xsdtest: suite fixture access failed")
+
 // Report summarizes one official test-set run.
 type Report struct {
 	Passed   int
@@ -55,7 +57,13 @@ func run(
 	if err != nil {
 		return Report{}, err
 	}
-	content, err := os.ReadFile(metadata)
+	files, err := os.OpenRoot(root)
+	if err != nil {
+		return Report{}, err
+	}
+	defer files.Close()
+	resolver := &suiteResolver{root: root, files: files}
+	content, err := resolver.readFile(metadata)
 	if err != nil {
 		return Report{}, err
 	}
@@ -63,7 +71,6 @@ func run(
 	if err := xml.Unmarshal(content, &testSet); err != nil {
 		return Report{}, fmt.Errorf("xsdtest: parse %s: %w", metadata, err)
 	}
-	resolver := &suiteResolver{root: root}
 	compiler, _ := compile.New(compile.Options{Resolver: resolver})
 	report := Report{}
 	for _, group := range testSet.Groups {
@@ -84,7 +91,7 @@ func run(
 			compiled, compileErr := compileDocuments(
 				ctx,
 				compiler,
-				root,
+				resolver,
 				metadata,
 				schemaTest.Documents,
 				group.Name,
@@ -92,6 +99,9 @@ func run(
 			actual := "valid"
 			if compileErr != nil {
 				actual = "invalid"
+				if errors.Is(compileErr, errFixtureRead) {
+					actual = "error"
+				}
 			}
 			if actual == schemaTest.Expected.Validity {
 				report.pass(group.Name, schemaTest.Name, "schema", actual)
@@ -128,7 +138,7 @@ func run(
 				report.fail(group.Name, instanceTest.Name, "instance", instanceTest.Expected.Validity, "error", pathErr)
 				continue
 			}
-			instance, readErr := os.ReadFile(instancePath)
+			instance, readErr := resolver.readFile(instancePath)
 			if readErr != nil {
 				report.fail(group.Name, instanceTest.Name, "instance", instanceTest.Expected.Validity, "error", readErr)
 				continue
@@ -143,7 +153,7 @@ func run(
 				instanceSet, hintErr = compileDocuments(
 					ctx,
 					compiler,
-					root,
+					resolver,
 					metadata,
 					append(append([]documentXML(nil), schemaDocuments...), hints...),
 					group.Name,
@@ -187,7 +197,7 @@ func run(
 func compileDocuments(
 	ctx context.Context,
 	compiler *compile.Compiler,
-	root string,
+	resolver *suiteResolver,
 	metadata string,
 	documents []documentXML,
 	group string,
@@ -196,15 +206,15 @@ func compileDocuments(
 	contents := make([][]byte, 0, len(documents))
 	seen := make(map[string]struct{}, len(documents))
 	for _, document := range documents {
-		path, err := resolveMetadataReference(root, metadata, document.Href)
+		path, err := resolveMetadataReference(resolver.root, metadata, document.Href)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", errFixtureRead, err)
 		}
 		if _, ok := seen[path]; ok {
 			continue
 		}
 		seen[path] = struct{}{}
-		content, err := os.ReadFile(path)
+		content, err := resolver.readFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -371,7 +381,22 @@ type currentXML struct {
 }
 
 type suiteResolver struct {
-	root string
+	root  string
+	files *os.Root
+}
+
+// readFile uses the Run-owned directory capability for every suite read.
+// Lexical path validation is retained, but cannot replace safe opening.
+func (r *suiteResolver) readFile(path string) ([]byte, error) {
+	relative, err := filepath.Rel(r.root, path)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errFixtureRead, err)
+	}
+	content, err := r.files.ReadFile(relative)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errFixtureRead, err)
+	}
+	return content, nil
 }
 
 func (r *suiteResolver) Resolve(
@@ -383,17 +408,17 @@ func (r *suiteResolver) Resolve(
 	}
 	parsed, err := url.Parse(request.URI)
 	if err != nil || parsed.Scheme != "file" || parsed.Host != "" {
-		return resolve.Resource{}, fmt.Errorf("xsdtest: unsupported suite URI %q", request.URI)
+		return resolve.Resource{}, fmt.Errorf("%w: unsupported suite URI %q", errFixtureRead, request.URI)
 	}
 	path, err := url.PathUnescape(parsed.Path)
 	if err != nil {
-		return resolve.Resource{}, err
+		return resolve.Resource{}, fmt.Errorf("%w: %w", errFixtureRead, err)
 	}
 	path, err = confinedPath(r.root, path)
 	if err != nil {
-		return resolve.Resource{}, err
+		return resolve.Resource{}, fmt.Errorf("%w: %w", errFixtureRead, err)
 	}
-	content, err := os.ReadFile(path)
+	content, err := r.readFile(path)
 	if err != nil {
 		return resolve.Resource{}, err
 	}

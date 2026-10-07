@@ -97,21 +97,27 @@ func TestCompileDocumentsRejectsMissingAndMalformedInputs(t *testing.T) {
 
 	root := t.TempDir()
 	metadata := filepath.Join(root, "tests.testSet")
-	compiler, err := compile.New(compile.Options{Resolver: &suiteResolver{root: root}})
+	files, err := os.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := compileDocuments(context.Background(), compiler, root, metadata,
+	t.Cleanup(func() { _ = files.Close() })
+	resolver := &suiteResolver{root: root, files: files}
+	compiler, err := compile.New(compile.Options{Resolver: resolver})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := compileDocuments(context.Background(), compiler, resolver, metadata,
 		[]documentXML{{Href: "missing.xsd"}}, "missing"); err == nil {
 		t.Fatal("compileDocuments() accepted a missing schema")
 	}
 	writeInternalFixture(t, root, "one.xsd", `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`)
 	writeInternalFixture(t, root, "bad.xsd", `<xs:schema`)
-	if _, err := compileDocuments(context.Background(), compiler, root, metadata,
+	if _, err := compileDocuments(context.Background(), compiler, resolver, metadata,
 		[]documentXML{{Href: "one.xsd"}, {Href: "bad.xsd"}}, "bad"); err == nil {
 		t.Fatal("compileDocuments() accepted malformed wrapper input")
 	}
-	if _, err := compileDocuments(context.Background(), compiler, root, metadata,
+	if _, err := compileDocuments(context.Background(), compiler, resolver, metadata,
 		[]documentXML{{Href: "one.xsd"}, {Href: "one.xsd"}}, "duplicate"); err != nil {
 		t.Fatalf("compileDocuments(duplicate) error = %v", err)
 	}
@@ -121,7 +127,12 @@ func TestSuiteResolverRejectsUnsafeRequests(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	resolver := &suiteResolver{root: root}
+	files, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = files.Close() })
+	resolver := &suiteResolver{root: root, files: files}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := resolver.Resolve(ctx, resolve.Request{URI: "file:///schema.xsd"}); !errors.Is(err, context.Canceled) {

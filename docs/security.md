@@ -1,5 +1,20 @@
 # Security and limits
 
+XSTS reads are explicitly opt-in and use the Run-owned `os.Root` capability
+for all four fixture owners; see [XSTS baseline](xsts-baseline.md) for the
+supported symlink boundary and platform limitations. This does not bound
+fixture sizes or interrupt blocking filesystem reads; suite contents remain
+trusted test data, not a tenant-facing ingestion API.
+
+The exact G115 dispositions in facet length accounting rely on
+`utf8.RuneCountInString` returning a nonnegative `int`, always representable as
+`uint64`. Unicode range conversions rely on R16 endpoints fitting `uint16`,
+and the R32 caller boundary using standard `unicode.Categories` tables whose
+endpoints are at most `utf8.MaxRune`. Stride expansion stays within each high
+endpoint. Revisit those dispositions if the table source or arithmetic
+changes; arbitrary application mutation of standard Unicode tables is a
+trusted-code change, not an accepted pattern-input mechanism.
+
 Schema parsing independently admits cumulative owned namespace entries
 (1,000,000 by default) and retained model-string/copy-work bytes (64 MiB by
 default). Namespace map copies and declarations, including rebindings, are

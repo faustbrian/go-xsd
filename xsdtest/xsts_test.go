@@ -110,6 +110,77 @@ func TestRunExecutesSchemaAndInstanceExpectations(t *testing.T) {
 	}
 }
 
+func TestRunConfinesSymlinkReadsToSuiteRoot(t *testing.T) {
+	for _, target := range []string{"tests.testSet", "value.xsd", "value.xml", "included.xsd"} {
+		for _, link := range []struct {
+			name     string
+			outside  bool
+			absolute bool
+		}{
+			{name: "inside-relative"},
+			{name: "outside-relative", outside: true},
+			{name: "outside-absolute", outside: true, absolute: true},
+			{name: "inside-absolute", absolute: true},
+		} {
+			t.Run(target+"/"+link.name, func(t *testing.T) {
+				root := t.TempDir()
+				fixtures := map[string]string{
+					"tests.testSet": `<testSet xmlns="http://www.w3.org/XML/2004/xml-schema-test-suite/"
+ xmlns:xlink="http://www.w3.org/1999/xlink"><testGroup name="links">
+ <schemaTest name="schema"><schemaDocument xlink:href="value.xsd"/>
+ <expected validity="valid"/></schemaTest>
+ <instanceTest name="instance"><instanceDocument xlink:href="value.xml"/>
+ <expected validity="valid"/></instanceTest></testGroup></testSet>`,
+					"value.xsd":    `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:include schemaLocation="included.xsd"/></xs:schema>`,
+					"included.xsd": `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="value" type="xs:string"/></xs:schema>`,
+					"value.xml":    `<value>harmless fixture</value>`,
+				}
+				for path, content := range fixtures {
+					if path != target {
+						writeFixture(t, root, path, content)
+					}
+				}
+				linkedRoot := root
+				if link.outside {
+					linkedRoot = t.TempDir()
+				}
+				writeFixture(t, linkedRoot, "linked-fixture", fixtures[target])
+				linkTarget, err := filepath.Rel(root, filepath.Join(linkedRoot, "linked-fixture"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if link.absolute {
+					linkTarget = filepath.Join(linkedRoot, "linked-fixture")
+				}
+				if err := os.Symlink(linkTarget, filepath.Join(root, target)); err != nil {
+					t.Fatal(err)
+				}
+				report, err := xsdtest.Run(context.Background(), root, "tests.testSet")
+				if !link.outside && !link.absolute {
+					if err != nil || report.Passed != 2 || report.Failed != 0 || report.Skipped != 0 {
+						t.Fatalf("in-root symlink: report=%#v error=%v", report, err)
+					}
+					return
+				}
+				if target == "tests.testSet" {
+					if err == nil {
+						t.Fatal("accepted metadata outside suite root")
+					}
+					return
+				}
+				if err != nil || report.Failed != 1 {
+					t.Fatalf("outside fixture was not rejected: report=%#v error=%v", report, err)
+				}
+				for _, result := range report.Cases {
+					if (result.Actual == "invalid" || result.Actual == "error") && result.Err == nil {
+						t.Fatal("rejected fixture without a read or resolution error")
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestRunRejectsReferencesOutsideSuiteRoot(t *testing.T) {
 	t.Parallel()
 
@@ -125,6 +196,44 @@ func TestRunRejectsReferencesOutsideSuiteRoot(t *testing.T) {
 	}
 	if report.Failed != 1 || report.Cases[0].Err == nil {
 		t.Fatalf("Report = %#v", report)
+	}
+}
+
+func TestRunDoesNotTreatFixtureReadRefusalAsInvalidSchema(t *testing.T) {
+	for _, target := range []string{"ordinary-invalid", "value.xsd", "included.xsd"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			invalid := `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="value" type="missing"/></xs:schema>`
+			writeFixture(t, root, "tests.testSet", `<testSet xmlns="http://www.w3.org/XML/2004/xml-schema-test-suite/"
+ xmlns:xlink="http://www.w3.org/1999/xlink"><testGroup name="invalid">
+ <schemaTest name="schema"><schemaDocument xlink:href="value.xsd"/>
+ <expected validity="invalid"/></schemaTest></testGroup></testSet>`)
+			if target == "ordinary-invalid" {
+				writeFixture(t, root, "value.xsd", invalid)
+			} else {
+				if target == "included.xsd" {
+					writeFixture(t, root, "value.xsd", `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:include schemaLocation="included.xsd"/></xs:schema>`)
+				}
+				outside := t.TempDir()
+				writeFixture(t, outside, "fixture.xsd", invalid)
+				if err := os.Symlink(filepath.Join(outside, "fixture.xsd"), filepath.Join(root, target)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			report, err := xsdtest.Run(context.Background(), root, "tests.testSet")
+			if err != nil || len(report.Cases) != 1 {
+				t.Fatalf("report=%#v error=%v", report, err)
+			}
+			if target == "ordinary-invalid" {
+				if report.Passed != 1 || report.Failed != 0 || report.Cases[0].Actual != "invalid" {
+					t.Fatalf("ordinary invalid schema no longer passes: %#v", report)
+				}
+				return
+			}
+			if report.Passed != 0 || report.Failed != 1 || report.Cases[0].Actual != "error" || report.Cases[0].Err == nil {
+				t.Fatalf("fixture refusal counted as schema invalidity: %#v", report)
+			}
+		})
 	}
 }
 

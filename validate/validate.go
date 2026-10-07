@@ -2711,7 +2711,7 @@ func (s *validationState) facetsValid(typeDefinition xsd.SimpleType, lexical str
 	}
 
 	normalized := s.normalizeRestrictionLexical(typeDefinition, lexical)
-	length := uint64(utf8.RuneCountInString(normalized))
+	length := uint64(utf8.RuneCountInString(normalized)) // #nosec G115 -- RuneCountInString returns a nonnegative int, representable by uint64 on every supported architecture.
 	if typeDefinition.InlineBase != nil && typeDefinition.InlineBase.Variety == xsd.SimpleList {
 		normalized = strings.Join(strings.Fields(lexical), " ")
 		length = uint64(len(strings.Fields(normalized)))
