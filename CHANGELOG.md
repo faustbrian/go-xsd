@@ -7,6 +7,10 @@ published major; main currently prepares the incompatible v2 module.
 
 ### Changed (next major)
 
+- Retain only unqualified appinfo `id` and `source` metadata, admitting every
+  retained byte. Foreign extension attributes remain accepted but ignored;
+  they cannot replace standard metadata or bypass its model allowance.
+
 - Confine every XSTS metadata, schema, instance and imported-schema read with
   one run-owned directory capability. Relative in-root symlinks remain usable;
   outside-root targets and absolute symlinks are rejected.

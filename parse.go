@@ -2485,17 +2485,26 @@ func (p *schemaParser) decodeAppInfo(decoder *xml.Decoder, start xml.StartElemen
 	if err := validateSchemaAttributes(start, "id", "source"); err != nil {
 		return AppInfo{}, err
 	}
+	var appInfo AppInfo
 	for _, attribute := range start.Attr {
-		if attribute.Name.Space == "" && (attribute.Name.Local == "id" || attribute.Name.Local == "source") {
-			if !p.chargeBytes(len(attribute.Value)) {
-				return AppInfo{}, p.err
-			}
+		// Unqualified encoding/xml attribute tags also match foreign namespaces.
+		// Extract metadata explicitly so ignored extensions cannot bypass admission
+		// or overwrite the standard fields.
+		if attribute.Name.Space != "" {
+			continue
+		}
+		switch attribute.Name.Local {
+		case "id":
+			appInfo.ID = p.retain(attribute.Value)
+		case "source":
+			appInfo.Source = p.retain(attribute.Value)
+		}
+		if p.err != nil {
+			return AppInfo{}, p.err
 		}
 	}
 	var content struct {
-		ID     string `xml:"id,attr"`
-		Source string `xml:"source,attr"`
-		Inner  string `xml:",innerxml"`
+		Inner string `xml:",innerxml"`
 	}
 	if err := p.admitAnnotationCapture(decoder); err != nil {
 		return AppInfo{}, err
@@ -2503,7 +2512,8 @@ func (p *schemaParser) decodeAppInfo(decoder *xml.Decoder, start xml.StartElemen
 	if err := decoder.DecodeElement(&content, &start); err != nil {
 		return AppInfo{}, err
 	}
-	return AppInfo{ID: content.ID, Source: content.Source, Content: content.Inner}, nil
+	appInfo.Content = content.Inner
+	return appInfo, nil
 }
 
 func (p *schemaParser) decodeDocumentation(decoder *xml.Decoder, start xml.StartElement) (Documentation, error) {
