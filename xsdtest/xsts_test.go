@@ -110,6 +110,40 @@ func TestRunExecutesSchemaAndInstanceExpectations(t *testing.T) {
 	}
 }
 
+func TestRunClassifiesHintFixtureRefusalsAsErrors(t *testing.T) {
+	for _, expected := range []string{"valid", "invalid"} {
+		for _, refusal := range []string{"missing", "outside-symlink"} {
+			t.Run(expected+"/"+refusal, func(t *testing.T) {
+				root := t.TempDir()
+				writeFixture(t, root, "base.xsd", `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="value" type="xs:string"/></xs:schema>`)
+				writeFixture(t, root, "value.xml", `<value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="hint.xsd">value</value>`)
+				if refusal == "outside-symlink" {
+					outside := t.TempDir()
+					writeFixture(t, outside, "hint.xsd", `<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`)
+					if err := os.Symlink(filepath.Join(outside, "hint.xsd"), filepath.Join(root, "hint.xsd")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				writeFixture(t, root, "tests.testSet", `<testSet xmlns="http://www.w3.org/XML/2004/xml-schema-test-suite/" xmlns:xlink="http://www.w3.org/1999/xlink"><testGroup name="hint">
+ <schemaTest name="base"><schemaDocument xlink:href="base.xsd"/><expected validity="valid"/></schemaTest>
+ <instanceTest name="instance"><instanceDocument xlink:href="value.xml"/><expected validity="`+expected+`"/></instanceTest>
+</testGroup></testSet>`)
+				report, err := xsdtest.Run(context.Background(), root, "tests.testSet")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if report.Passed != 1 || report.Failed != 1 || report.Skipped != 0 || report.Excluded != 0 || len(report.Cases) != 2 {
+					t.Fatalf("incorrect fixture-refusal accounting: %#v", report)
+				}
+				instance := report.Cases[1]
+				if instance.Kind != "instance" || instance.Name != "instance" || instance.Expected != expected || instance.Actual != "error" || instance.Err == nil {
+					t.Fatalf("fixture refusal was attributed to instance invalidity: %#v", instance)
+				}
+			})
+		}
+	}
+}
+
 func TestRunConfinesSymlinkReadsToSuiteRoot(t *testing.T) {
 	for _, target := range []string{"tests.testSet", "value.xsd", "value.xml", "included.xsd"} {
 		for _, link := range []struct {

@@ -159,7 +159,11 @@ func run(
 					group.Name,
 				)
 				if hintErr != nil {
-					report.fail(group.Name, instanceTest.Name, "instance", instanceTest.Expected.Validity, "invalid", hintErr)
+					actual := "invalid"
+					if errors.Is(hintErr, errFixtureRead) {
+						actual = "error"
+					}
+					report.fail(group.Name, instanceTest.Name, "instance", instanceTest.Expected.Validity, actual, hintErr)
 					continue
 				}
 			}

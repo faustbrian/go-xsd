@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "module_directory": ".",
+      "package_directory": ".",
+      "source_digest": "2389f71385387f805344adb11355757e5767bf8b9a855c0031795effab32890c",
+      "gremlins_version": "v0.6.0",
+      "gremlins_verifier_sha256": "390cf4085a0063fe5dcaa29ce942ea4cb8c7876347da90376b65dc8c5c811104",
+      "mutations": [
+        {
+          "file_name": "parse.go",
+          "type": "INVERT_LOGICAL",
+          "line": 560,
+          "column": 39,
+          "contract_domain": "Documented public Parse model, finite occurrence accounting, nil document on failure, preserved selected typed cause and synchronous cooperative cancellation for all conforming Context implementations; not exact Context-method traces, timing or concurrent cancellation/resource-error tie ordering",
+          "reason": "Independent reviewer /root/xsd_full_contract_inventory_final_review ACCEPT this coordinate; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier, redefine reference producer, cancellation granularity or public error-precedence contract change. Gremlins changes the first || to &&. Accepted public redefine references have empty Namespace. If ID admission fails, sticky p.err makes the additional Namespace evaluation fail without another poll and both return the identical cause. If ID admission succeeds, the mutant skips only a zero-byte Namespace charge and its context poll; Location admission immediately checks that same context before positive-byte admission or decoder progress. Any cancellation already returned remains the same error at this next checkpoint for a conforming Context. Accounting, model data, nil failure, cause preservation and later token checks remain intact. Existing XSD-DEC-012 and threat-model ownership define cooperative checkpoints, not method call counts or cancellation/limit race tie precedence; public Parse already rejects options/source size before cancellation polling. This is contract-relative equivalence, not exact collaborator-observation equivalence: conforming custom Contexts may observe fewer Err calls and an asynchronous cancellation may compete differently with a positive Location refusal. Production guard remains unchanged. Native37594400704 remains FAILED794KILLED6LIVED0TIMEOUT; no native counter or other coordinate is altered."
+        },
+        {
+          "file_name": "parse.go",
+          "type": "CONDITIONALS_BOUNDARY",
+          "line": 280,
+          "column": 35,
+          "contract_domain": "Annotation placement reached through public Parse and its single parser owner; identical recorded spans, admission, cancellation checkpoints and parse results",
+          "reason": "Independent reviewer /root/xsd_release_policy_preparation; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier or public owner-construction change. Gremlins changes len(owner)>0 to len(owner)>=0. Public Parse constructs one schemaParser and prepareAnnotationSpans passes exactly that owner to the sole production validateAnnotationPlacement call, so len(owner) is always one. Both predicates are true; recorded annotation spans and all later admission behavior are identical, including malformed and canceled inputs. Private zero-owner calls are outside this producer domain and can distinguish the mutation. Fresh native37594400704 remains FAILED with this coordinate LIVED; this review changes neither native counters nor any other survivor."
+        },
+        {
+          "file_name": "parse.go",
+          "type": "INCREMENT_DECREMENT",
+          "line": 955,
+          "column": 16,
+          "contract_domain": "Namespace declaration counting of decoder-produced finite StartElement.Attr slices through public Parse; identical namespace-copy admission and resulting mappings",
+          "reason": "Independent reviewer /root/xsd_release_policy_preparation; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier or declaration-count consumer change. Gremlins changes declarations++ to declarations--. The count begins at zero and is consumed only by declarations==0; n and -n agree on that predicate. At most len(start.Attr) declarations are visited, so neither integer can overflow. Unchanged copy and declaration charges and subsequent mapping assignments preserve all outputs, refusal and cancellation behavior. Adding any magnitude/sign consumer invalidates this proof. Fresh native37594400704 remains FAILED with this coordinate LIVED; no other survivor is accepted."
+        },
+        {
+          "file_name": "parse_budget.go",
+          "type": "INVERT_LOGICAL",
+          "line": 126,
+          "column": 12,
+          "contract_domain": "Annotation capture reached through prepared public Parse over stable borrowed source bytes; identical span admission, model charging, cancellation and output",
+          "reason": "Independent reviewer /root/xsd_release_policy_preparation, reaffirmed by /root/xsd_full_contract_inventory_final_review; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier, span preparation, decoder configuration or stable-source ownership change. Gremlins changes the first || to &&. Successful strict preparation records every appinfo/documentation capture span using the same source and strict decoder as the later parse; known is true and 0<=size<len(source), so all three guard predicates are false. Both expressions remain false and the identical chargeBytes call executes. Malformed XML fails preparation; cancellation does not alter span predicates. Missing/negative/oversized synthetic spans, unprepared private calls and application modification of borrowed bytes during Parse are outside this producer domain. Fresh native37594400704 remains FAILED with this coordinate LIVED; no native counter or other coordinate is altered."
+        },
+        {
+          "file_name": "parse_budget.go",
+          "type": "INVERT_LOGICAL",
+          "line": 126,
+          "column": 24,
+          "contract_domain": "Annotation capture reached through prepared public Parse over stable borrowed source bytes; identical span admission, model charging, cancellation and output",
+          "reason": "Independent reviewer /root/xsd_release_policy_preparation; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier, span preparation, decoder configuration or stable-source ownership change. Gremlins changes the second || to &&. Strict preparation records each capture span using the same source and decoder configuration, establishing known=true and 0<=size<len(source); every predicate is false, including under the altered conjunction precedence. Both expressions admit the same span and execute identical charging. Malformed XML fails preparation. Synthetic missing/negative/oversized spans, unprepared private calls and modification of borrowed source during Parse are excluded. Native37594400704 remains FAILED with this coordinate LIVED; no blanket equivalence or cancellation-check waiver is asserted."
+        },
+        {
+          "file_name": "parse_budget.go",
+          "type": "CONDITIONALS_BOUNDARY",
+          "line": 126,
+          "column": 32,
+          "contract_domain": "Annotation capture reached through prepared public Parse over stable borrowed source bytes; identical inclusive source-span admission and model charging",
+          "reason": "Independent reviewer /root/xsd_release_policy_preparation, reaffirmed by /root/xsd_full_contract_inventory_final_review; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier, capture-offset preparation or stable-source ownership change. Gremlins changes size>len(source) to size>=len(source). Recorded body spans begin after their opening token and end before its closing token; even empty and self-closing spans therefore satisfy 0<=size<len(source). Equality with whole source length is unreachable through prepared public Parse, so both comparisons are false and charging/cancellation/results remain identical. Whole-source synthetic spans and concurrent borrowed-source modification are outside this producer domain. Native37594400704 remains FAILED with this coordinate LIVED; no native counter or other coordinate is altered."
+        }
+      ]
+    }
+  ]
+}
