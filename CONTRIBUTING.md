@@ -45,7 +45,7 @@ collection does not certify assertion quality, security adequacy or readiness.
 ### Development tooling route
 
 CI uses the reviewed, immutable Tools source
-`0d07a89b02cc76419aa0cb880c68d92c96f2b4d7` for both the reusable workflow and
+`55c50f11cc9a33a5306d71cb3dac71a9c92ed13c` for both the reusable workflow and
 `tooling_sha`, with `source_bootstrap: true`. This route builds tooling from
 that pristine source and runs the full `golib check --all`, not `--local`.
 It is an explicit development-tooling route, not stable-binary qualification.
