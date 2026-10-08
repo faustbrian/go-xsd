@@ -61,7 +61,8 @@ func run(
 	if err != nil {
 		return Report{}, err
 	}
-	defer files.Close()
+	// This read-only directory capability has no pending writes to report.
+	defer func() { _ = files.Close() }()
 	resolver := &suiteResolver{root: root, files: files}
 	content, err := resolver.readFile(metadata)
 	if err != nil {
