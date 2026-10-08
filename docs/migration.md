@@ -5,7 +5,7 @@
 Main now uses `github.com/faustbrian/go-xsd/v2`. Source stays at the repository
 root; the new major is published with a root `v2.0.0` Git tag only after release
 qualification. This candidate is not yet a published v2 release. Existing v1
-consumers must keep their unsuffixed imports and selected v1 dependency.
+consumers must keep their original v1 imports and selected v1 dependency.
 
 When v2 is published, insert `/v2` before each package suffix, including
 `/compile`, `/resolve` and `/validate`. Public APIs exposing XSD values acquire

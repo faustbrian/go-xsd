@@ -17,7 +17,7 @@ trusted-code change, not an accepted pattern-input mechanism.
 
 Schema parsing independently admits cumulative owned namespace entries
 (1,000,000 by default) and retained model-string/copy-work bytes (64 MiB by
-default). Namespace map copies and declarations, including rebindings, are
+default). Namespace map copies and declarations, including binding changes, are
 charged before capacity/copy/insertion; an unchanged aliased scope costs no new
 entries. String occurrences include expanded QName components, namespace
 prefixes/URIs, identifiers, values, SystemID/base/reference fields, raw annotation

@@ -337,7 +337,8 @@ Documentation: `docs/specification-decisions.md`.
 
 Implementation clarification for XSD-DEC-012/013: validation independently caps
 serialized bytes and cumulative owned string payload occurrences, and counts
-namespace scope copies plus declaration insertions/rebindings as finite work.
+namespace scope copies plus declaration insertions and binding changes as
+finite work.
 Reader scopes inherit; caller tree scopes are complete and explicit. Admission
 precedes owned map/child capacity allocation, but not standard decoder token
 allocation. The accounting policy and finite executable assertions are detailed
