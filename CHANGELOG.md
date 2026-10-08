@@ -1,9 +1,16 @@
 # Changelog
 
 All notable released changes are documented here. Compatibility follows each
-published major; main currently prepares the incompatible v2 module.
+published major; main follows the v2 module.
 
 ## Unreleased
+
+## 2.0.0 - 2026-10-08
+
+- Publish the separate `/v2` module with finite owned-work admission and
+  categorical default reporting. Migrate imports and review finite limits;
+  no corrected v1 release is included. The preparation entries below describe
+  changes leading to this publication, not the current publication state.
 
 ### Security guidance
 

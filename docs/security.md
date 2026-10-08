@@ -4,8 +4,12 @@
 
 The following findings apply to published `github.com/faustbrian/go-xsd`
 v1.0.0 and v1.1.0. The controls described later on this page belong to the
-current v2 candidate, not those older releases. No fixed v1 release or public
-v2 release is currently available.
+published v2 module, not those older releases. No fixed v1 release is
+available; [v2.0.0](https://github.com/faustbrian/go-xsd/releases/tag/v2.0.0)
+provides the separate-major remedy. The findings are published as
+[diagnostic privacy](https://github.com/faustbrian/go-xsd/security/advisories/GHSA-qv3w-rqw9-5v4r)
+and [owned-work admission and cancellation](https://github.com/faustbrian/go-xsd/security/advisories/GHSA-m4xr-277f-8gc6)
+advisories for the original v1 module.
 
 - Default errors and structured diagnostics can include source identities,
   schema details and delegated error text. Confidentiality is affected when
@@ -13,7 +17,7 @@ v2 release is currently available.
   fixed application-owned categories instead; keep diagnostic fields and
   error causes within trusted inspection and avoid evaluating their text.
 - Memory and Catalog constructors, URI preprocessing and owned copies or
-  expansions lack the candidate's independent cumulative-work allowances.
+  expansions lack v2's independent cumulative-work allowances.
   Existing document, depth and count limits remain useful but do not bound
   every earlier constructor or cumulative-copy operation. Admit finite
   resource and mapping counts, total content and identity bytes, per-URI
@@ -30,12 +34,12 @@ v2 release is currently available.
 These findings do not establish affected deployments, remote exploitation,
 implicit network access or an authorization bypass. The maintainer owns
 remediation and private report triage; application integrators own temporary
-input admission and reporting. Revisit these mitigations when v2 is published,
+input admission and reporting. Revisit these mitigations when upgrading to v2,
 when input trust or reporting boundaries change, or when a new report changes
 the assessed impact. Migration requires `/v2` imports, reviewed finite
 allowances and trusted-only detailed diagnostics; see [migration](migration.md).
 
-## Current candidate controls
+## Published v2 controls
 
 XSTS reads are explicitly opt-in and use the Run-owned `os.Root` capability
 for all four fixture owners; see [XSTS baseline](xsts-baseline.md) for the
@@ -87,7 +91,7 @@ observed cancellation. Content-byte and parser-model budgets remain separate.
 Parser-model admission still bounds the earlier construction and resolution of
 schema references; the compiler's URI cap does not replace that allowance.
 
-For the next major, `compile.Compiler.Compile` failures and built-in resolver
+In v2, `compile.Compiler.Compile` failures and built-in resolver
 constructor/Resolve/Close failures use `xsd compile: failed` or
 `xsd resolve: failed` for supported text/formatting, JSON and logging. Default
 output never evaluates delegated error formatting, marshaling or logging hooks.
@@ -116,7 +120,7 @@ regexp. Standard-library sorting/regexp compilation and matching are synchronous
 bounded operations, not interruptible work. `CompilePattern` uses a background
 context; compiler and validator input patterns use their actual operation context.
 
-For the next major, `Diagnostic` and `Location` supported default formatting,
+In v2, `Diagnostic` and `Location` supported default formatting,
 JSON and logging return only `xsd: diagnostic` and `xsd: location`. Quoted
 formatting quotes the category; nil pointers retain safe nil/null forms.
 All fields, including arbitrary severity/code strings and source coordinates,
@@ -142,7 +146,7 @@ The parser and instance validator forbid DTD directives and do not expand
 external entities. Parsing performs no implicit I/O. Compilation denies file
 and remote resolution unless the caller injects a resolver.
 
-For the next major, non-nil `ParseError` default `Error`, supported pointer/value `fmt` formats
+In v2, non-nil `ParseError` default `Error`, supported pointer/value `fmt` formats
 (including Go-syntax formats), JSON and `slog` output expose only the fixed
 `xsd: parse failed` category without evaluating cause formatting, marshaling
 or logging callbacks. Nil and zero receivers return that category from
@@ -151,7 +155,7 @@ a nil pointer, and JSON encodes a nil pointer as `null`.
 Its exported `Location` and `Err` remain unchanged for explicit trusted
 inspection through fields, `Unwrap`, `errors.Is` and `errors.As`. Do not log
 those fields outside that trusted boundary. This is an intentional formatting
-compatibility break, not a release announcement. Public compiler and built-in
+compatibility break from v1. Public compiler and built-in
 resolver error boundaries have the separate cause-preserving protections above.
 
 Parser options bound bytes, XML element depth, and total elements before the

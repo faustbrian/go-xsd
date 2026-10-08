@@ -23,12 +23,12 @@ Published v1.0.0 and v1.1.0 have the diagnostic-privacy and bounded-work gaps
 described in [security guidance](docs/security.md#published-v1-limitations).
 No corrected v1 release is available. The maintainer continues private report
 triage, but remediation of these findings uses the incompatible `/v2` module
-rather than a promised v1 backport. The v2 candidate is not yet a published
-release; qualification and public consumption must pass before publication.
+rather than a promised v1 backport. [V2.0.0](https://github.com/faustbrian/go-xsd/releases/tag/v2.0.0)
+is published and verified through clean public-module consumption.
 
-Until a fixed release is available, applications must provide the temporary
-admission and reporting controls in that guidance. After publication, migrate
-using [the v2 guide](docs/migration.md). Compatibility decisions follow
+Applications remaining on v1 must provide the temporary admission and
+reporting controls in that guidance. Migrate using
+[the v2 guide](docs/migration.md). Compatibility decisions follow
 [`COMPATIBILITY.md`](COMPATIBILITY.md).
 
 ## Security Gates

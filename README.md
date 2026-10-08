@@ -15,25 +15,25 @@ and builder for Go. It is intended to provide the schema layer for `wsdl`
 and SOAP tooling without performing implicit file or network access.
 
 > [!NOTE]
-> The released module follows stable v1 compatibility. The
+> The released module follows stable v2 compatibility. The
 > documented XML Schema 1.0 surface is evidence-mapped and the pinned XSTS
 > baseline passes; neither statement claims support for XML Schema 1.1 or for
 > behavior outside the published matrix.
 >
-> Main prepares the incompatible v2 module; v2 is not yet published or release
-> qualified. See [migration guidance](docs/migration.md) before adopting it.
+> V2.0.0 is published. V1 has the limitations documented in
+> [security guidance](docs/security.md#published-v1-limitations).
+> See [migration guidance](docs/migration.md) before upgrading.
 
 ## Install
 
-The stable v1 release requires Go 1.27.0.
+The stable v2 release requires Go 1.27.0.
 
 ```sh
-go get github.com/faustbrian/go-xsd@v1
+go get github.com/faustbrian/go-xsd/v2@v2
 ```
 
-After v2 is published, install `github.com/faustbrian/go-xsd/v2@v2` and add
-`/v2` before each package suffix. Do not use this candidate's security claims
-as promises about the existing v1 release.
+Add `/v2` before each package suffix. V2 security controls are not promises
+about the older v1 releases; no v1 backport is included.
 
 ## Quick start
 

@@ -2,6 +2,10 @@
 
 Contract version: 1
 
+Applies to: `github.com/faustbrian/go-xsd/v2` v2.0.0. The older v1 module
+without a major suffix has the separately documented
+[limitations](security.md#published-v1-limitations).
+
 ## Scope and assets
 
 This model covers the root module, schema parser and model, compiler, datatype
@@ -35,7 +39,7 @@ granting resolver capabilities. Successful parsing is not authorization.
 
 See [security and limits](security.md), [resolution](resolution.md) and
 [validation](validation.md) for configurable policies and exact semantics.
-Controls changed for the next major are not promises about an older published
+V2 controls are not promises about an older published
 release. Bind the release verdict to the actual version and immutable source.
 
 ## Residual ownership and review conditions
@@ -49,7 +53,7 @@ the capabilities and collaborators they inject.
 | Blocking readers, OS reads and injected resolvers | Application and maintainer: a context cannot forcibly interrupt an arbitrary synchronous collaborator. Use cooperative bounded readers/resolvers and caller-owned transport deadlines; check cancellation before and after owned work and discard partial failures. | Review when adding a blocking operation, changing resolver lifecycle or claiming interruption beyond owned checkpoints. |
 | Network resolution | Application: arbitrary injected network code is outside built-in capability confinement. Restrict destinations, redirects, DNS/proxy behavior, credentials, decompression and response size; maintain deadlines. Default Deny does not secure a separately injected client. | Review whenever a network capability or destination policy changes. |
 | Raw diagnostic data | Application and maintainer: exported data and trusted unwrapping retain useful detail. Keep these out of untrusted reporting. Invalid fmt verb/type diagnostics can bypass supported formatting protection; use valid formats rather than treating all verbs as safe. | Review new output interfaces, logging handlers, projections or error types. |
-| Schema namespace/model copies | Maintainer: candidate parser controls independently bound namespace entries and model-string/copy work. Decoder token allocations and exact heap measurement remain outside this accounting; use finite source/element/depth limits too. | Review changed accounting, QName/annotation semantics and compiler propagation; runtime/release qualification remains separate from these source controls. |
+| Schema namespace/model copies | Maintainer: v2 parser controls independently bound namespace entries and model-string/copy work. Decoder token allocations and exact heap measurement remain outside this accounting; use finite source/element/depth limits too. | Review changed accounting, QName/annotation semantics and compiler propagation; runtime/release qualification remains separate from these source controls. |
 | Constructor admission | Maintainer: ownership copies must be bounded at their constructor, not by a later compiler. Verify finite policies, exact/one-over refusals, nil failure results and independent successful storage. | Review changes to collection limits, URI normalization or ownership; qualify the actual implementation before release. |
 | Release and maintainer integrity | Maintainer: source review does not prove artifact or publication integrity. Verify exact source, selected gates, public module resolution, signing/checksums and affected consumers; use private coordinated disclosure for confirmed findings. | Every affected release, changed dependency/workflow/signing identity or security incident. |
 
@@ -58,8 +62,10 @@ the capabilities and collaborators they inject.
 Current source controls, ordinary tests, scanner results, residual decisions,
 remote-main CI and public consumption are distinct evidence boundaries. A
 pending or failed selected gate is not a pass; this document does not waive
-coverage, mutation or other configured release requirements. No passing
-whole-module security verdict or public next-major release is implied here.
+coverage, mutation or other configured release requirements. The published
+[v2.0.0 release](https://github.com/faustbrian/go-xsd/releases/tag/v2.0.0) binds
+the qualified source, signed assets and clean public consumer. That evidence
+does not certify later source changes or separately released WSDL adoption.
 
 Report privately under [SECURITY.md](../SECURITY.md). Apply the shared
 severity, acknowledgement, remediation, embargo and advisory procedure there.
