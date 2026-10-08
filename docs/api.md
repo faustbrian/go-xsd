@@ -27,6 +27,14 @@ independent. Compiler callers select the same per-document allowances through
 `compile.Limits.MaxParseNamespaceEntries` and `MaxParseModelBytes` for both root
 and loaded schemas. These are not graph-total budgets or exact heap accounting.
 
+`compile.Limits.MaxURIBytes` admits each root, reference and resolved identity
+before URI parsing, cache lookup or resolver dispatch. The independent
+`resolve.FileOptions.MaxURIBytes` admits direct file requests before URI
+parsing or filesystem work. Both are inclusive 64 KiB defaults; zero selects
+the default and negatives are invalid. Refusal preserves the respective
+package's `ErrLimitExceeded`, publishes no partial result and keeps observed
+cancellation priority. Existing content/model-byte budgets remain independent.
+
 Use the [compiler-checked package example](../example_test.go) for the smallest
 complete parse, compile, and validation flow. The [architecture guide](architecture.md)
 describes compilation in more detail, and the [security guide](security.md)

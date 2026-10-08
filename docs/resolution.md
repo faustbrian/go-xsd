@@ -21,6 +21,9 @@ tightens acceptance for existing constructors; no release is implied.
 hostless absolute `file` URIs beneath one absolute configured root, confines
 opens with `os.Root`, rejects symlink and traversal escapes, and caps each
 resource with the inclusive `FileOptions.MaxBytes` limit (16 MiB by default).
+`FileOptions.MaxURIBytes` independently admits request URI bytes before
+parsing or filesystem work (inclusive 64 KiB by default). Zero selects the
+default, negatives are invalid and refusal preserves `resolve.ErrLimitExceeded`.
 Platform-native absolute paths, including Windows drive paths, remain confined
 to the configured root. Close the resolver when the compiler no longer needs
 it:
@@ -56,7 +59,13 @@ any declaration that later depends on unresolved imported components.
 Resolvers receive the absolute URI, requested namespace, and reference kind.
 They must return bytes with the exact requested resource identity. Compiler
 limits bound schemas, references, depth, components, particles, and total
-bytes.
+content bytes. `compile.Limits.MaxURIBytes` separately bounds each root,
+reference and returned identity before URI parsing, cache lookup or resolver
+dispatch (inclusive 64 KiB by default). Zero selects the finite default;
+negatives are invalid. A rejected reference never dispatches the resolver.
+Returned identities are admitted before mismatch diagnostics, including
+namespace-only imports. Refusal preserves `compile.ErrLimitExceeded` and
+publishes no partial Set; observed cancellation retains priority.
 
 There is no built-in HTTP resolver. Applications needing one should implement
 `resolve.Resolver`, enforce an allowlist, cap response bytes and redirects,

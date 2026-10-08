@@ -63,6 +63,7 @@ func TestCompileDocumentCountersUseExactLimits(t *testing.T) {
 		state.compiler.limits.MaxDepth = 1
 		state.compiler.limits.MaxSchemas = 2
 		state.compiler.limits.MaxReferences = 1
+		state.compiler.limits.MaxURIBytes = defaultMaxURIBytes
 		state.resources = map[string]resourceDocument{
 			rootURI:  {document: &xsd.Document{References: []xsd.SchemaReference{{Kind: xsd.ReferenceInclude, URI: childURI}}}},
 			childURI: {document: &xsd.Document{}},

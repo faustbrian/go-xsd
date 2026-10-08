@@ -28,6 +28,7 @@ const (
 	defaultMaxDepth          = 64
 	defaultMaxReferences     = 4096
 	defaultMaxBytes          = 64 << 20
+	defaultMaxURIBytes       = 64 << 10
 	defaultMaxComponents     = 100000
 	defaultMaxParticles      = 1000000
 	defaultMaxParticleCopies = 1000000
@@ -47,6 +48,10 @@ type Limits struct {
 	MaxDepth      int
 	MaxReferences int
 	MaxBytes      int64
+	// MaxURIBytes bounds each root, reference and resolved resource URI before
+	// identity parsing, cache lookup or resolver dispatch. Zero selects 64 KiB.
+	// It is independent of MaxBytes, which counts cumulative schema content.
+	MaxURIBytes   int64
 	MaxComponents int
 	MaxParticles  int
 	// MaxParticleCopies bounds cumulative compiler-owned particle slots copied or
@@ -96,6 +101,9 @@ func New(options Options) (*Compiler, error) {
 	if limits.MaxBytes == 0 {
 		limits.MaxBytes = defaultMaxBytes
 	}
+	if limits.MaxURIBytes == 0 {
+		limits.MaxURIBytes = defaultMaxURIBytes
+	}
 	if limits.MaxComponents == 0 {
 		limits.MaxComponents = defaultMaxComponents
 	}
@@ -113,6 +121,9 @@ func New(options Options) (*Compiler, error) {
 }
 
 func validateLimits(limits Limits) error {
+	if limits.MaxURIBytes < 0 {
+		return fmt.Errorf("xsd compile: limits must not be negative")
+	}
 	if limits.MaxParseNamespaceEntries < 0 || limits.MaxParseModelBytes < 0 {
 		return fmt.Errorf("xsd compile: limits must not be negative")
 	}
@@ -684,6 +695,9 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err erro
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+	}
+	if err := c.admitURI(root.URI); err != nil {
+		return nil, err
 	}
 	if err := validateIdentity(root.URI); err != nil {
 		return nil, err
@@ -4772,6 +4786,9 @@ func (s *compileState) load(
 		return nil, "", err
 	}
 
+	if err := s.compiler.admitURI(reference.URI); err != nil {
+		return nil, "", err
+	}
 	if cached, ok := s.resources[reference.URI]; ok {
 		return cached.document, reference.URI, nil
 	}
@@ -4784,6 +4801,9 @@ func (s *compileState) load(
 		return nil, "", err
 	}
 	if err := s.contextError(); err != nil {
+		return nil, "", err
+	}
+	if err := s.compiler.admitURI(resource.URI); err != nil {
 		return nil, "", err
 	}
 	if reference.URI != "" && resource.URI != reference.URI {
@@ -4863,6 +4883,13 @@ func resolveKind(kind xsd.ReferenceKind) resolve.Kind {
 	default:
 		return ""
 	}
+}
+
+func (c *Compiler) admitURI(identity string) error {
+	if int64(len(identity)) > c.limits.MaxURIBytes {
+		return fmt.Errorf("%w: resource URI exceeds %d bytes", ErrLimitExceeded, c.limits.MaxURIBytes)
+	}
+	return nil
 }
 
 func validateIdentity(identity string) error {

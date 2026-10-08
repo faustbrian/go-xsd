@@ -7,6 +7,13 @@ published major; main currently prepares the incompatible v2 module.
 
 ### Changed (next major)
 
+- Admit each compiler root, reference and resolved URI before identity parsing,
+  cache lookup or resolver dispatch. `compile.Limits.MaxURIBytes` and the
+  independent `resolve.FileOptions.MaxURIBytes` default to an inclusive 64 KiB;
+  negatives are invalid. Refusal preserves typed limit errors and publishes
+  no Set or Resource, while observed cancellation retains priority. Existing
+  schema-content byte limits remain independent.
+
 - Retain only unqualified appinfo `id` and `source` metadata, admitting every
   retained byte. Foreign extension attributes remain accepted but ignored;
   they cannot replace standard metadata or bypass its model allowance.

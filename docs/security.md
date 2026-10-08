@@ -38,6 +38,18 @@ include resource URIs and catalog namespace strings, not just schema content.
 See [resolution](resolution.md) for inclusive defaults and additive options.
 These policies do not bound prior caller allocations or exact heap overhead.
 
+Compiler identity admission independently limits each root, reference and
+returned resource URI to 64 KiB by default, before URI parsing, cache hashing,
+resolver dispatch or mismatch diagnostics. Select an inclusive finite allowance
+with `compile.Limits.MaxURIBytes`; zero uses the default and negatives are
+invalid. File resolver requests have their own `FileOptions.MaxURIBytes`
+allowance with the same default, applied before URI parsing and filesystem
+work. Limit refusal preserves the respective compiler/resolver
+`ErrLimitExceeded`, publishes no partial result and does not replace an
+observed cancellation. Content-byte and parser-model budgets remain separate.
+Parser-model admission still bounds the earlier construction and resolution of
+schema references; the compiler's URI cap does not replace that allowance.
+
 For the next major, `compile.Compiler.Compile` failures and built-in resolver
 constructor/Resolve/Close failures use `xsd compile: failed` or
 `xsd resolve: failed` for supported text/formatting, JSON and logging. Default

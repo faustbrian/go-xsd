@@ -12,24 +12,31 @@ import (
 	"github.com/faustbrian/go-xsd/v2/internal/errsafe"
 )
 
-const defaultFileMaxBytes int64 = 16 << 20
+const (
+	defaultFileMaxBytes    int64 = 16 << 20
+	defaultFileMaxURIBytes int64 = 64 << 10
+)
 
 // ErrLimitExceeded reports a constructor count/input-byte limit or a resolver
-// resource exceeding its content-byte cap.
+// resource exceeding its content-byte or request-URI cap.
 var ErrLimitExceeded = errors.New("xsd resolve: resource limit exceeded")
 
 // FileOptions configures an opt-in, root-confined file resolver.
 type FileOptions struct {
 	Root     string
 	MaxBytes int64
+	// MaxURIBytes bounds each request URI before parsing or filesystem work.
+	// Zero selects 64 KiB; negative values are invalid. The limit is inclusive.
+	MaxURIBytes int64
 }
 
 // File resolves file URIs beneath one opened filesystem root. It never
 // resolves network URIs and os.Root prevents symlink traversal outside Root.
 type File struct {
-	path     string
-	root     *os.Root
-	maxBytes int64
+	path        string
+	root        *os.Root
+	maxBytes    int64
+	maxURIBytes int64
 }
 
 // NewFile opens a traversal-resistant filesystem root. The caller must close
@@ -45,16 +52,23 @@ func NewFile(options FileOptions) (resolver *File, err error) {
 	if options.MaxBytes < 0 || options.MaxBytes == int64(^uint64(0)>>1) {
 		return nil, errors.New("xsd resolve: file byte limit is outside the supported range")
 	}
+	if options.MaxURIBytes < 0 {
+		return nil, errors.New("xsd resolve: file URI byte limit must not be negative")
+	}
 	maximum := options.MaxBytes
 	if maximum == 0 {
 		maximum = defaultFileMaxBytes
+	}
+	maximumURI := options.MaxURIBytes
+	if maximumURI == 0 {
+		maximumURI = defaultFileMaxURIBytes
 	}
 	rootPath := filepath.Clean(options.Root)
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		return nil, err
 	}
-	return &File{path: rootPath, root: root, maxBytes: maximum}, nil
+	return &File{path: rootPath, root: root, maxBytes: maximum, maxURIBytes: maximumURI}, nil
 }
 
 // Close releases the opened filesystem root.
@@ -74,6 +88,9 @@ func (r *File) Resolve(ctx context.Context, request Request) (resource Resource,
 	}
 	if r == nil || r.root == nil {
 		return Resource{}, fmt.Errorf("%w: file resolver is not open", ErrAccessDenied)
+	}
+	if int64(len(request.URI)) > r.maxURIBytes {
+		return Resource{}, ErrLimitExceeded
 	}
 	parsed, err := url.Parse(request.URI)
 	if err != nil || parsed.Scheme != "file" || parsed.Host != "" ||
