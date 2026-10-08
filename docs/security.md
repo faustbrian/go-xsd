@@ -71,9 +71,9 @@ output protection as described below.
 
 XML Schema pattern translation independently bounds source bytes (1 MiB),
 translated bytes (8 MiB), and class-subtraction nesting (inclusive depth 256,
-outer class depth one). Depth refusal occurs before descending into an excluded
-class. `datatype.CompilePatternContext` cooperatively checks its context during
-owned translation, class and rune-set work and before/after standard-library
+outer class depth one). Depth refusal occurs before admitting an excluded class
+or parsing its contents. `datatype.CompilePatternContext` cooperatively checks
+its context during owned translation, class and rune-set work and before/after standard-library
 compilation, preserving cancellation/deadline causes and returning no partial
 regexp. Standard-library sorting/regexp compilation and matching are synchronous
 bounded operations, not interruptible work. `CompilePattern` uses a background

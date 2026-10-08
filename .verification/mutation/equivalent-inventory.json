@@ -57,6 +57,31 @@
           "reason": "Independent reviewer /root/xsd_release_policy_preparation, reaffirmed by /root/xsd_full_contract_inventory_final_review; date 2026-10-07; expiry 2026-11-06 or any bound source/verifier, capture-offset preparation or stable-source ownership change. Gremlins changes size>len(source) to size>=len(source). Recorded body spans begin after their opening token and end before its closing token; even empty and self-closing spans therefore satisfy 0<=size<len(source). Equality with whole source length is unreachable through prepared public Parse, so both comparisons are false and charging/cancellation/results remain identical. Whole-source synthetic spans and concurrent borrowed-source modification are outside this producer domain. Native37594400704 remains FAILED with this coordinate LIVED; no native counter or other coordinate is altered."
         }
       ]
+    },
+    {
+      "module_directory": ".",
+      "package_directory": "datatype",
+      "source_digest": "8f25ea4d859c212e04fcfeb92e680a16036e9cec2327e037aaf9eae4ec4c2a7a",
+      "gremlins_version": "v0.6.0",
+      "gremlins_verifier_sha256": "390cf4085a0063fe5dcaa29ce942ea4cb8c7876347da90376b65dc8c5c811104",
+      "mutations": [
+        {
+          "file_name": "pattern.go",
+          "type": "CONDITIONALS_BOUNDARY",
+          "line": 117,
+          "column": 27,
+          "contract_domain": "Public CompilePattern and CompilePatternContext with producer-owned zero-initialized translator depth and unchanged recursive-call admission; identical admission, cancellation observations, errors and compiled expressions",
+          "reason": "Independent bounded reviewer /root/streams_native_cancellation_mapping; date 2026-10-08; expiry 2026-11-07 or any bound source/verifier, translator construction, depth restoration or recursive caller change. Gremlins v0.6.0 changes >= to >. Public construction starts depth at zero; sibling calls restore it through the unchanged deferred decrement. The sole recursive caller at135 refuses depth256 before invoking this entry guard, so this guard only sees depths0 through255. Equality is unreachable through supported public producers, and both predicates take identical branches with identical context observations, allocations, errors and expressions. Artificial private translators violate that producer invariant. Native37786321117 remains FAILED596KILLED3LIVED0TIMEOUT for datatype; this accepts only this exact coordinate and requires fresh matching-source qualification."
+        },
+        {
+          "file_name": "pattern.go",
+          "type": "CONDITIONALS_BOUNDARY",
+          "line": 135,
+          "column": 29,
+          "contract_domain": "Public pattern compilation with inclusive depth256 before excluded-class admission or content parsing, nil regexp on refusal, preserved cancellation cause and cooperative checkpoints; excludes exact context-call traces, instruction timing and asynchronous cancellation/depth-error tie ordering",
+          "reason": "Independent bounded reviewer /root/streams_native_cancellation_mapping; date 2026-10-08; expiry 2026-11-07 or any bound source/verifier, entry depth guard, cancellation granularity or documented public depth-refusal policy change. Gremlins v0.6.0 changes >= to >. Only equality at depth256 differs. The mutant advances a private index and enters one extra helper frame, whose unchanged117 guard refuses before incrementing depth, admitting the excluded class, parsing its contents or allocating its rune set. Both public APIs return nil regexp and the same depth refusal; observed cancellation remains its original cause through the unchanged outer post-translation context check. The bounded extra frame and context poll are not exact execution equivalence and can change asynchronous cancellation/resource-error tie ordering, which cooperative cancellation does not specify. Documentation explicitly means refusal before class admission or content parsing, not prohibition on entering a helper. Production guards remain unchanged. Native37786321117 and its original counters remain failed and unmodified; no other coordinate or context-check removal is accepted. Fresh matching-source native qualification remains required."
+        }
+      ]
     }
   ]
 }

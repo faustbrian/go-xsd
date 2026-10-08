@@ -3,6 +3,7 @@ package datatype_test
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -54,5 +55,30 @@ func TestCompilePatternClassDepthAdmission(t *testing.T) {
 		if compiled.MatchString("a") != (depth%2 == 0) || compiled.MatchString("b") != (depth%2 == 1) {
 			t.Fatal("subtraction parity changed")
 		}
+	}
+}
+
+func TestCompilePatternSiblingClassesDoNotAccumulateDepth(t *testing.T) {
+	for _, compile := range []struct {
+		name string
+		fn   func(string) (*regexp.Regexp, error)
+	}{
+		{"ordinary", datatype.CompilePattern},
+		{"context", func(pattern string) (*regexp.Regexp, error) {
+			return datatype.CompilePatternContext(context.Background(), pattern)
+		}},
+	} {
+		t.Run(compile.name, func(t *testing.T) {
+			pattern := strings.Repeat("[a-z-[aeiou]]", 256)
+			compiled, err := compile.fn(pattern)
+			if err != nil || compiled == nil {
+				t.Fatalf("independent depth-two classes were refused: %v", err)
+			}
+			if !compiled.MatchString(strings.Repeat("b", 256)) ||
+				compiled.MatchString(strings.Repeat("b", 255)) ||
+				compiled.MatchString(strings.Repeat("b", 255)+"a") {
+				t.Fatal("sibling class count or subtraction semantics changed")
+			}
+		})
 	}
 }
