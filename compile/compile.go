@@ -678,17 +678,14 @@ func cloneDocument(document Document, owner ...*compileState) Document {
 
 // Compile parses and resolves a complete bounded schema graph.
 func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err error) {
+	state := compileState{ctx: ctx}
 	defer func() {
+		if stopped := state.contextError(); stopped != nil {
+			set, err = nil, stopped
+		}
 		if err != nil {
 			set = nil
 			err = errsafe.Wrap("xsd compile: failed", err)
-		}
-	}()
-	defer func() {
-		if ctx != nil {
-			if canceled := ctx.Err(); canceled != nil {
-				set, err = nil, canceled
-			}
 		}
 	}()
 	if ctx != nil {
@@ -705,7 +702,7 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err erro
 	if int64(len(root.Content)) > c.limits.MaxBytes {
 		return nil, fmt.Errorf("%w: schema bytes exceed %d", ErrLimitExceeded, c.limits.MaxBytes)
 	}
-	state := compileState{
+	state = compileState{
 		ctx:               ctx,
 		compiler:          c,
 		resources:         map[string]resourceDocument{},
@@ -721,11 +718,6 @@ func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err erro
 		typeKinds:         map[xsd.QName]string{},
 		bytes:             int64(len(root.Content)),
 	}
-	defer func() {
-		if stopped := state.contextError(); stopped != nil {
-			set, err = nil, stopped
-		}
-	}()
 	document, err := xsd.Parse(ctx, root.Content, xsd.ParseOptions{
 		SystemID:            root.URI,
 		MaxDocumentBytes:    c.limits.MaxBytes,
