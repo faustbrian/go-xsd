@@ -1,5 +1,42 @@
 # Security and limits
 
+## Published v1 limitations
+
+The following findings apply to published `github.com/faustbrian/go-xsd`
+v1.0.0 and v1.1.0. The controls described later on this page belong to the
+current v2 candidate, not those older releases. No fixed v1 release or public
+v2 release is currently available.
+
+- Default errors and structured diagnostics can include source identities,
+  schema details and delegated error text. Confidentiality is affected when
+  applications forward that output across a less-trusted boundary. Report
+  fixed application-owned categories instead; keep diagnostic fields and
+  error causes within trusted inspection and avoid evaluating their text.
+- Memory and Catalog constructors, URI preprocessing and owned copies or
+  expansions lack the candidate's independent cumulative-work allowances.
+  Existing document, depth and count limits remain useful but do not bound
+  every earlier constructor or cumulative-copy operation. Admit finite
+  resource and mapping counts, total content and identity bytes, per-URI
+  bytes, and schema or instance complexity before invoking the library.
+  These are temporary application controls, not a complete library fix.
+  Restrict schemas to trusted sources if those controls cannot be enforced.
+- Validation and compilation do not propagate cancellation through all
+  owned work. Caller deadlines alone do not guarantee prompt interruption.
+  Keep admitted inputs and service concurrency finite, use cooperative
+  readers and resolvers, and reject an operation result when the caller
+  context has expired. These controls do not make arbitrary blocking
+  collaborators interruptible.
+
+These findings do not establish affected deployments, remote exploitation,
+implicit network access or an authorization bypass. The maintainer owns
+remediation and private report triage; application integrators own temporary
+input admission and reporting. Revisit these mitigations when v2 is published,
+when input trust or reporting boundaries change, or when a new report changes
+the assessed impact. Migration requires `/v2` imports, reviewed finite
+allowances and trusted-only detailed diagnostics; see [migration](migration.md).
+
+## Current candidate controls
+
 XSTS reads are explicitly opt-in and use the Run-owned `os.Root` capability
 for all four fixture owners; see [XSTS baseline](xsts-baseline.md) for the
 supported symlink boundary and platform limitations. This does not bound

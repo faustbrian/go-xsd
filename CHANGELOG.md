@@ -5,6 +5,13 @@ published major; main currently prepares the incompatible v2 module.
 
 ## Unreleased
 
+### Security guidance
+
+- Identify published v1.0.0 and v1.1.0 diagnostic-privacy, independent-work
+  admission and owned-cancellation limitations. Document temporary caller
+  controls and the planned incompatible v2 remedy without claiming a fixed
+  v1 or published v2 release. Private report triage continues.
+
 ### Changed (next major)
 
 - Admit each compiler root, reference and resolved URI before identity parsing,
@@ -14,7 +21,7 @@ published major; main currently prepares the incompatible v2 module.
   no Set or Resource, while observed cancellation retains priority. Existing
   schema-content byte limits remain independent.
 
-- Retain only unqualified appinfo `id` and `source` metadata, admitting every
+- Retain only unqualified `appinfo` `id` and `source` metadata, admitting every
   retained byte. Foreign extension attributes remain accepted but ignored;
   they cannot replace standard metadata or bypass its model allowance.
 

@@ -2,8 +2,9 @@
 
 ## Reporting
 
-Report suspected vulnerabilities privately through the GitHub security
-advisory for `faustbrian/go-xsd`. Do not open a public issue containing exploit
+Report suspected vulnerabilities through the
+[private reporting form](https://github.com/faustbrian/go-xsd/security/advisories/new).
+Do not open a public issue containing exploit
 details, credentials, private fixtures, or affected deployment information.
 
 Include the affected module and version, impact, reproduction, preconditions,
@@ -18,8 +19,16 @@ affected and fixed versions without disclosing reporter data or credentials.
 
 ## Supported Versions
 
-The latest stable `v1` release line receives security fixes. Support windows
-are documented per module and in
+Published v1.0.0 and v1.1.0 have the diagnostic-privacy and bounded-work gaps
+described in [security guidance](docs/security.md#published-v1-limitations).
+No corrected v1 release is available. The maintainer continues private report
+triage, but remediation of these findings uses the incompatible `/v2` module
+rather than a promised v1 backport. The v2 candidate is not yet a published
+release; qualification and public consumption must pass before publication.
+
+Until a fixed release is available, applications must provide the temporary
+admission and reporting controls in that guidance. After publication, migrate
+using [the v2 guide](docs/migration.md). Compatibility decisions follow
 [`COMPATIBILITY.md`](COMPATIBILITY.md).
 
 ## Security Gates
