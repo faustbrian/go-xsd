@@ -28,6 +28,11 @@ and SOAP tooling without performing implicit file or network access.
 
 The stable v2 release requires Go 1.27.0.
 
+Verification uses Go 1.27.2. Windows consumers should rebuild and redeploy
+with Go 1.27.2 or a later patched release to address the standard-library
+[GO-2026-6604 advisory](https://pkg.go.dev/vuln/GO-2026-6604). Updating the
+XSD module alone does not replace the Go runtime in an existing binary.
+
 ```sh
 go get github.com/faustbrian/go-xsd/v2@v2
 ```

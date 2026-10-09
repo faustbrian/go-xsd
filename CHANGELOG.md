@@ -5,6 +5,11 @@ published major; main follows the v2 module.
 
 ## Unreleased
 
+- Select Go 1.27.2 for verification and compatible shared analysis tooling,
+  retaining the public Go 1.27.0 minimum. Windows consumers should rebuild
+  and redeploy with patched Go to address the standard-library GO-2026-6604
+  advisory; upgrading XSD alone does not patch an existing binary's runtime.
+
 ## 2.0.0 - 2026-10-08
 
 - Publish the separate `/v2` module with finite owned-work admission and
