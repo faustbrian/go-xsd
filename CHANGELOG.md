@@ -5,6 +5,8 @@ published major; main follows the v2 module.
 
 ## Unreleased
 
+## 2.0.1 - 2026-10-10
+
 - Select Go 1.27.2 for verification and compatible shared analysis tooling,
   retaining the public Go 1.27.0 minimum. Windows consumers should rebuild
   and redeploy with patched Go to address the standard-library GO-2026-6604
