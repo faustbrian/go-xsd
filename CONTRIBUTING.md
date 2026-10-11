@@ -52,9 +52,9 @@ readiness, and is not required for every ordinary local change.
 
 ### Public tooling and bounded local verification
 
-CI consumes the checksum-pinned public Tools `v2.1.0` binary. The reusable
+CI consumes the checksum-pinned public Tools `v2.1.1` binary. The reusable
 workflow and `tooling_sha` both select immutable source
-`e79bb570d242fac90be99a6959e3b45de89279dd`, with `source_bootstrap: false`;
+`eff8b2127c361ee2f422123824a1d337cc277ac4`, with `source_bootstrap: false`;
 ordinary contributions do not require a Tools source build or sibling checkout.
 `public_dependencies: true` selects the official public proxy and checksum
 database instead of a private bootstrap archive; XSD's external module
