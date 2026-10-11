@@ -25,10 +25,30 @@ operations:
   - module: .
     gate: fuzz
     steps:
-      - type: make
-        makefile: verification/package.mk
-        target: fuzz
-        timeout: 20m
+      - type: go-test
+        packages: ["."]
+        fuzz: '^FuzzParseSchema$'
+        budget: 5s
+        count: 1
+        timeout: 2m
+      - type: go-test
+        packages: ["."]
+        fuzz: '^FuzzValidateInstance$'
+        budget: 5s
+        count: 1
+        timeout: 2m
+      - type: go-test
+        packages: ["./datatype"]
+        fuzz: '^FuzzParseDecimal$'
+        budget: 5s
+        count: 1
+        timeout: 2m
+      - type: go-test
+        packages: ["./datatype"]
+        fuzz: '^FuzzBuiltInLexical$'
+        budget: 5s
+        count: 1
+        timeout: 2m
   - module: .
     gate: conformance
     steps:
