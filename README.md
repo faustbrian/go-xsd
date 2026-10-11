@@ -3,7 +3,7 @@
 [![CI](https://github.com/faustbrian/go-xsd/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faustbrian/go-xsd/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/badge/CodeQL-required-blue)](https://github.com/faustbrian/go-xsd/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-risk_based_evidence-blue)](CONTRIBUTING.md#verification)
-[![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
+[![Mutation](https://img.shields.io/badge/mutation-local_or_scheduled-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-xsd/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-xsd/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-xsd?sort=semver)](https://github.com/faustbrian/go-xsd/releases)
@@ -57,8 +57,10 @@ Use [GitHub issues](https://github.com/faustbrian/go-xsd/issues) for adoption
 questions and defect reports, and follow the [support](SUPPORT.md) and
 [security](SECURITY.md) policies.
 
-Run `make check` for formatting, static analysis, tests, the race detector,
-and provenance checks.
+Start with `go test ./...` for ordinary source work, then use `make check` for
+bounded local verification. See [contributor guidance](CONTRIBUTING.md#verification)
+for focused fuzzing and selected compatibility, race, provenance and release
+checks; mutation is optional local or scheduled assurance, not a PR prerequisite.
 
 For ecosystem-wide selection and ownership guidance, see the versioned
 [Golib ecosystem index](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md)
