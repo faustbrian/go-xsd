@@ -1,5 +1,7 @@
 # Benchmark baseline
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 This is a local comparison point, not a CI latency budget or a claim of equal
 feature coverage.
 
@@ -26,3 +28,6 @@ JAXP reference engine. The comparison uses the same files under
 `testdata/benchmark`; JAXP must accept `valid.xml` and reject `invalid.xml`
 before timing. Local and CI execution use the same digest-pinned Eclipse
 Temurin 25 container, while raw output records the exact Java runtime.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

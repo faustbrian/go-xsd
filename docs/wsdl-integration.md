@@ -1,5 +1,7 @@
 # WSDL integration
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 WSDL tooling should compile embedded and imported schemas once, retain the
 immutable `compile.Set`, and query declarations by expanded QName. It should
 not duplicate chameleon include, group expansion, datatype, or substitution
@@ -17,3 +19,6 @@ inventories so generators do not need access to mutable compiler maps.
 `compile/wsdl_contract_test.go` fixes this public consumer surface as an
 executable contract. Future `wsdl` requirements must extend that contract
 and the requirement matrix instead of reaching into compiler internals.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

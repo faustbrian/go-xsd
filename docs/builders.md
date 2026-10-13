@@ -1,5 +1,7 @@
 # Builders and serialization
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 `builder.Schema` offers checked methods for named elements, attributes, simple
 restrictions, and complex types. Inputs are deeply copied. `Build` serializes
 and compiles the complete result before returning an isolated document, so
@@ -16,3 +18,6 @@ limits for untrusted or tenant-controlled models.
 The convenience methods intentionally cover a conservative surface. Raw
 structs remain available for advanced schemas, but they are not valid by
 construction; `Build` is the required validity boundary for either path.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

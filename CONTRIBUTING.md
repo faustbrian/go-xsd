@@ -41,7 +41,7 @@ that hide a failing package.
 
 ## Verification
 
-Classify the change under [proportional assurance](AGENTS.md#proportional-assurance)
+Classify the change under [proportional assurance](AGENTS.md#scope-and-verification)
 and select assertions for the affected observable behavior. Explicit coverage
 collection retains the root module's `coverage.modules` evidence mode: it
 executes the complete module coverage command with all production targets and

@@ -1,5 +1,7 @@
 # Resolution and catalogs
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 `resolve.Resolver` is the only compilation I/O boundary. The default resolver
 denies every request. `resolve.Memory` is suitable for tests, embedded schemas,
 and applications that already control all resource bytes.
@@ -71,3 +73,6 @@ There is no built-in HTTP resolver. Applications needing one should implement
 `resolve.Resolver`, enforce an allowlist, cap response bytes and redirects,
 and avoid forwarding ambient credentials. Use `resolve.File` instead of
 mapping an untrusted schema location directly to a filesystem path.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

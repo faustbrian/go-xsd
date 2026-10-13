@@ -1,5 +1,7 @@
 # Cookbook
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 ## Compile embedded schemas
 
 Create `resolve.Memory` with absolute resource URIs, pass it to
@@ -23,3 +25,6 @@ references before the schema is published.
 Locate the feature in `specification/requirements/xsd-1.0.tsv`. A `partial` or
 `missing` row is not a validator bug report by itself; add a focused schema and
 instance fixture plus the relevant normative section when implementing it.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

@@ -1,5 +1,7 @@
 # Security and limits
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 ## Published v1 limitations
 
 The following findings apply to published `github.com/faustbrian/go-xsd`
@@ -181,3 +183,6 @@ It must defend against SSRF, redirects, DNS rebinding, credential forwarding,
 and decompression bombs. The opt-in `resolve.File` resolver confines opens to
 an explicit root and applies a per-resource byte limit. The package does not
 make other injected resolvers safe.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

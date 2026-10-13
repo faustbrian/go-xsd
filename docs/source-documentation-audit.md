@@ -1,5 +1,7 @@
 # Source documentation audit
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 ## Ownership and prewrite acceptance
 
 Tier A comments/current-prose only at freshly fetched main `a778100a312841fee263bb47efb8f4070639d30a`. Owner: this standalone `/v2` XSD family; root parses and serializes a mutable schema model, builder assembles it, compile owns immutable resolved sets, validate owns bounded per-call instance work, datatype owns lexical/value-space operations, resolve owns explicit capabilities, and xsdtest owns opt-in trusted fixture ingestion. WSDL/SOAP consumers depend on these public contracts; no sibling checkout or consumer execution is required for unchanged signatures/runtime.
@@ -228,3 +230,6 @@ routes. Ordinary shared CI selects strict source-documentation checking and
 requires its result. Native prerequisites, operation budgets, security and
 release controls are retained. Hosted exact-head evidence is recorded by the
 coordination ledger; configuration alone does not establish green delivery.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

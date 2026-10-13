@@ -1,5 +1,7 @@
 # Datatypes
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The `datatype` package provides exact arbitrary-precision decimal and integer
 values, built-in integer ranges, calendar and duration lexical checks, binary
 lexical checks, and XML Name-derived lexical spaces. Decimal and integer
@@ -18,3 +20,6 @@ and nested character-class subtraction while retaining linear-time matching.
 NOTATION restrictions require enumerations that resolve to compiled notation
 declarations; the built-in NOTATION type cannot be used directly.
 The `TYPE-*` matrix rows identify the remaining datatype limitations.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

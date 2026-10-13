@@ -1,5 +1,7 @@
 # FAQ
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 ## Does parsing load imports or includes?
 
 No. Parsing records references. Only compilation may resolve them, through the
@@ -29,3 +31,6 @@ for the separate risk-based and release requirements.
 
 Yes. Sets and validators are immutable and their public accessors return deep
 copies where the model contains mutable storage.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

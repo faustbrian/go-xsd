@@ -1,5 +1,7 @@
 # Model and compilation
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The root package parses schema bytes into an explicit `Document`. Parsing does
 not resolve imports or includes. The model retains expanded QNames, form and
 derivation policies, declarations, named and anonymous types, groups,
@@ -17,3 +19,6 @@ plans.
 Recognized invalid restrictions, derivations, references, and ambiguous
 content models fail compilation instead of producing a different validation
 plan.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

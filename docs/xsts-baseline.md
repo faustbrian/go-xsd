@@ -1,5 +1,7 @@
 # XSTS baseline
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The XSTS harness was verified against every test-set metadata file in the
 pinned archive. These historical results are conformance evidence, not proof
 of filesystem confinement.
@@ -26,3 +28,6 @@ platforms; it must not be claimed for JavaScript targets.
 Queried expectations are disputed upstream metadata rather than accepted
 conformance requirements. The harness reports them separately and fails if
 any accepted valid or invalid expectation fails or is skipped.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

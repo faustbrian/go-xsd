@@ -1,5 +1,7 @@
 # Performance
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Compile schema graphs once and reuse `compile.Set` and `validate.Validator`
 concurrently. Resolver work and schema compilation should not occur per
 instance. Resource limits are correctness and security controls, not tuning
@@ -17,3 +19,6 @@ The [local baseline](benchmark-baseline.md) is a comparison point, not a claim
 that unlike implementations have identical feature coverage. Go allocation
 counts apply only to the owned workloads. Throughput changes are release
 evidence only when the correctness gate remains green.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

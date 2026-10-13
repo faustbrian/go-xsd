@@ -1,5 +1,7 @@
 # Support and conformance
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The stable target is the documented surface of XML Schema 1.0 Second Edition
 plus reviewed errata, using XML 1.0 Fifth Edition and Namespaces in XML 1.0
 Third Edition at the parsing boundary. XML Schema 1.1 is outside stable scope.
@@ -37,3 +39,6 @@ reference runs without network access in the digest-pinned Eclipse Temurin 25
 container declared by `scripts/run-java-reference.sh`.
 The peer lane compares validity outcomes only; JAXP diagnostics and resource
 policy are not treated as equivalent or normative.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

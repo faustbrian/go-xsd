@@ -1,5 +1,7 @@
 # API guide
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 The Go package documentation is authoritative for signatures. This guide maps
 package responsibility and ownership boundaries.
 
@@ -39,3 +41,6 @@ Use the [compiler-checked package example](../example_test.go) for the smallest
 complete parse, compile, and validation flow. The [architecture guide](architecture.md)
 describes compilation in more detail, and the [security guide](security.md)
 defines required limits and resolver hardening.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

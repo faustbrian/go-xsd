@@ -1,5 +1,7 @@
 # Validation
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Create a `validate.Validator` from an immutable compiled set. `Validate`
 accepts caller-provided XML bytes, `ValidateReader` incrementally reads an
 `io.Reader`, and `ValidateTree` accepts a caller-owned expanded-name tree.
@@ -62,3 +64,6 @@ substitution groups, anonymous types, and the implemented identity XPath
 subset. Complete XSD assessment semantics remain a release blocker.
 The published support claim is therefore limited to the versioned requirement
 matrix and decision register; XSTS and peer results do not widen that boundary.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

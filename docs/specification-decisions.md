@@ -1,5 +1,7 @@
 # XML Schema specification decisions
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 This register records observable choices where XML Schema 1.0 Second Edition,
 its errata, XSTS, XML parsing, or the Go host environment leave more than one
 credible implementation. Normative Structures and Datatypes prose outranks
@@ -351,3 +353,6 @@ lines, resolver policies, datatype ambiguities, or serialization profiles MUST
 be registered before observable behavior is selected. An unresolved
 validation, security, resource, or wire decision blocks a release claim for
 the affected surface.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

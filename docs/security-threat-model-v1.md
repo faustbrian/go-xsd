@@ -1,5 +1,7 @@
 # XSD security threat model
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 Contract version: 1
 
 Applies to: `github.com/faustbrian/go-xsd/v2` v2.0.0. The older v1 module
@@ -71,3 +73,6 @@ Report privately under [SECURITY.md](../SECURITY.md). Apply the shared
 severity, acknowledgement, remediation, embargo and advisory procedure there.
 Record confirmed affected/fixed versions and safe upgrade guidance; do not
 publish private reporter data, credentials or exploit-enabling artifacts.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.

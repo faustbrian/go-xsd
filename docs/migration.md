@@ -1,5 +1,7 @@
 # Migration and compatibility
 
+[Documentation index](README.md) · [Repository entry](../README.md)
+
 ## Migrating to v2
 
 Main now uses `github.com/faustbrian/go-xsd/v2`. Source stays at the repository
@@ -55,3 +57,6 @@ instance validation, assign an absolute system URI, inject a resolver for every
 dependency, compile once, and handle structured diagnostics rather than string
 matching errors. Pin a module version and run representative schemas through
 the conformance matrix before upgrading.
+
+Choose the next guide in the [documentation index](README.md)
+or return to the [repository entry](../README.md) for installation and ownership.
