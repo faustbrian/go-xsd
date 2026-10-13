@@ -52,9 +52,9 @@ readiness, and is not required for every ordinary local change.
 
 ### Public tooling and bounded local verification
 
-CI consumes the checksum-pinned public Tools `v2.3.0` binary. The reusable
+CI consumes the checksum-pinned public Tools `v2.4.0` binary. The reusable
 workflow and `tooling_sha` both select immutable source
-`d38bf31e7403501075442de9fde78f9479052996`, with `source_bootstrap: false`;
+`0e8ff6fee42e88858069a6f6ae6f1080d95c5eae`, with `source_bootstrap: false`;
 ordinary contributions do not require a Tools source build or sibling checkout.
 `public_dependencies: true` selects the official public proxy and checksum
 database instead of a private bootstrap archive; XSD's external module
@@ -126,3 +126,12 @@ Follow [repository structure policy](AGENTS.md#repository-structure). New module
 require an explicit purpose, ownership boundary, dependency review, package
 catalog entry, full quality gates, documentation, changelog, license, security
 policy, compatibility plan, and release dry-run.
+
+## Source Documentation
+
+Install the checksum-pinned public verifier declared in `.golib.yaml`.
+`make source-docs-check` validates objective Go comment, marker, link and
+generated-producer structure; `make check`, `make check-full` and `make ci`
+require it before their existing checks. Shared CI runs the same strict
+contract and includes its result in Required. This is structural enforcement,
+not a substitute for source-truth review or behavioral verification.
