@@ -23,7 +23,10 @@ var ErrLimitExceeded = errors.New("xsd resolve: resource limit exceeded")
 
 // FileOptions configures an opt-in, root-confined file resolver.
 type FileOptions struct {
-	Root     string
+	// Root is the required absolute filesystem directory opened as an os.Root
+	// capability.
+	Root string
+	// MaxBytes bounds each file read; zero selects 16 MiB and MaxInt64 is invalid.
 	MaxBytes int64
 	// MaxURIBytes bounds each request URI before parsing or filesystem work.
 	// Zero selects 64 KiB; negative values are invalid. The limit is inclusive.

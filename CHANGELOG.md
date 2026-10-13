@@ -5,6 +5,13 @@ published major; main follows the v2 module.
 
 ## Unreleased
 
+### Documentation
+
+- Clarify mutable schema/builder inputs, copied compiled components, explicit
+  resolver ownership, cooperative cancellation, numeric and pattern limits,
+  trusted diagnostic projections, and non-canonical serialization without
+  changing the v2 API or XML Schema support boundary.
+
 ## 2.0.1 - 2026-10-10
 
 - Select Go 1.27.2 for verification and compatible shared analysis tooling,

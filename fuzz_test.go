@@ -7,6 +7,9 @@ import (
 	xsd "github.com/faustbrian/go-xsd/v2"
 )
 
+// FuzzParseSchema checks that every admitted parser model can be marshaled.
+// It includes the saved placement regression; rejection is not a conformance
+// result, and this is not a byte-preserving serialization oracle.
 func FuzzParseSchema(f *testing.F) {
 	f.Add(benchmarkSchema)
 	f.Add([]byte(`<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>`))
@@ -24,6 +27,8 @@ func FuzzParseSchema(f *testing.F) {
 	})
 }
 
+// FuzzValidateInstance exercises panic-safety with one fixed compiled schema.
+// It does not assert validity for arbitrary inputs or replace XSTS expectations.
 func FuzzValidateInstance(f *testing.F) {
 	validator := benchmarkValidator(f)
 	f.Add(benchmarkInstance)

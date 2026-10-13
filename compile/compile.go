@@ -15,11 +15,22 @@ import (
 )
 
 var (
-	ErrLimitExceeded       = errors.New("xsd compile: resource limit exceeded")
-	ErrNamespace           = errors.New("xsd compile: namespace mismatch")
-	ErrResourceIdentity    = errors.New("xsd compile: resource identity mismatch")
-	ErrDuplicateComponent  = errors.New("xsd compile: duplicate component")
-	ErrInvalidComponent    = errors.New("xsd compile: invalid component")
+	// ErrLimitExceeded identifies refusal of a configured resource or supported-size
+	// bound.
+	ErrLimitExceeded = errors.New("xsd compile: resource limit exceeded")
+	// ErrNamespace identifies an include/import effective-namespace mismatch.
+	ErrNamespace = errors.New("xsd compile: namespace mismatch")
+	// ErrResourceIdentity identifies a resolver identity different from the
+	// requested resource.
+	ErrResourceIdentity = errors.New("xsd compile: resource identity mismatch")
+	// ErrDuplicateComponent identifies duplicate global components in one symbol
+	// space.
+	ErrDuplicateComponent = errors.New("xsd compile: duplicate component")
+	// ErrInvalidComponent identifies a declaration rejected by the supported schema
+	// constraints.
+	ErrInvalidComponent = errors.New("xsd compile: invalid component")
+	// ErrUnresolvedComponent identifies a referenced declaration that cannot be
+	// found.
 	ErrUnresolvedComponent = errors.New("xsd compile: unresolved component")
 )
 
@@ -44,40 +55,55 @@ func compileChildDepth(depth int) int {
 
 // Limits bounds graph construction. Zero values select conservative defaults.
 type Limits struct {
-	MaxSchemas    int
-	MaxDepth      int
+	// MaxSchemas bounds effective schema document/namespace instances; zero selects
+	// 256.
+	MaxSchemas int
+	// MaxDepth bounds schema graph depth; zero selects 64.
+	MaxDepth int
+	// MaxReferences bounds composition references; zero selects 4,096.
 	MaxReferences int
-	MaxBytes      int64
+	// MaxBytes bounds cumulative root and resolved schema content; zero selects 64
+	// MiB.
+	MaxBytes int64
 	// MaxURIBytes bounds each root, reference and resolved resource URI before
 	// identity parsing, cache lookup or resolver dispatch. Zero selects 64 KiB.
 	// It is independent of MaxBytes, which counts cumulative schema content.
-	MaxURIBytes   int64
+	MaxURIBytes int64
+	// MaxComponents bounds compiled component admission; zero selects 100,000.
 	MaxComponents int
-	MaxParticles  int
+	// MaxParticles bounds admitted expanded particle work; zero selects 1,000,000.
+	MaxParticles int
 	// MaxParticleCopies bounds cumulative compiler-owned particle slots copied or
 	// synthesized per Compile call, including temporary and redefined content.
 	// Zero selects 1,000,000 independently of MaxParticles (the final count).
 	MaxParticleCopies int
-	// MaxParseNamespaceEntries and MaxParseModelBytes independently bound owned
-	// parsing work per document, not cumulatively across the schema graph.
-	// Zero selects parser defaults (1,000,000 entries and 64 MiB).
+	// MaxParseNamespaceEntries bounds per-document namespace copies/declarations,
+	// not a graph-wide total. Zero selects 1,000,000.
 	MaxParseNamespaceEntries int
-	MaxParseModelBytes       int64
+	// MaxParseModelBytes bounds per-document retained strings/copy work; zero
+	// selects 64 MiB.
+	MaxParseModelBytes int64
 }
 
 // Options configures a Compiler. A nil Resolver denies every external load.
 type Options struct {
+	// Resolver is retained as a collaborator; nil selects deny-all resolution.
 	Resolver resolve.Resolver
-	Limits   Limits
+	// Limits selects independent finite work bounds.
+	Limits Limits
 }
 
 // Source is the caller-owned root schema resource.
 type Source struct {
-	URI     string
+	// URI is the absolute fragment-free resource identity.
+	URI string
+	// Content is schema content read synchronously, not retained as the input slice.
 	Content []byte
 }
 
-// Compiler is immutable and safe for concurrent use.
+// Compiler owns immutable options and per-call compilation state. Concurrent
+// use requires the retained Resolver to support concurrent calls; its lifetime
+// is caller-owned. Obtain initialized instances with New.
 type Compiler struct {
 	resolver resolve.Resolver
 	limits   Limits
@@ -153,13 +179,22 @@ func validateLimits(limits Limits) error {
 
 // Document describes one schema document in one effective namespace.
 type Document struct {
-	URI          string
-	Namespace    string
-	Chameleon    bool
+	// URI is the absolute fragment-free resource identity.
+	URI string
+	// Namespace is the effective compiled namespace, not a lexical prefix.
+	Namespace string
+	// Chameleon reports adoption of a no-target-namespace source into this
+	// namespace.
+	Chameleon bool
+	// Dependencies contains resolved resource identities referenced by this
+	// document.
 	Dependencies []string
 }
 
-// Set is an immutable, concurrency-safe schema document graph.
+// Set is an immutable, concurrency-safe schema document graph produced by
+// Compile. Accessors return isolated mutable component copies and ordered names,
+// not a lossless source-document representation. Copying accessors are
+// synchronous and do not accept cancellation or independent copy budgets.
 type Set struct {
 	documents         []Document
 	elements          map[xsd.QName]xsd.Element
@@ -676,7 +711,12 @@ func cloneDocument(document Document, owner ...*compileState) Document {
 	return document
 }
 
-// Compile parses and resolves a complete bounded schema graph.
+// Compile parses and resolves a bounded schema graph with a non-nil context.
+// Root Content is borrowed for this call and must remain unchanged. Success
+// publishes an immutable Set; any error returns nil, including errors from a
+// resolver that returned partial data. Cancellation is cooperative and cannot
+// interrupt a blocking collaborator. Supported default error output is redacted;
+// inspect wrapped causes only within a trusted boundary.
 func (c *Compiler) Compile(ctx context.Context, root Source) (set *Set, err error) {
 	state := compileState{ctx: ctx}
 	defer func() {
@@ -3421,6 +3461,10 @@ type upaInfo struct {
 	last     upaPositions
 }
 
+// XSD 1.0 Structures 3.8.6 Unique Particle Attribution needs position identity,
+// not just element names:
+// first/last/follow sets detect competing particles after nullable/repeated paths.
+// The operation owner supplies cancellation and preflighted particle limits.
 type upaState struct {
 	compile *compileState
 	next    int
@@ -3913,6 +3957,8 @@ type resourceDocument struct {
 	document *xsd.Document
 }
 
+// Physical resource parsing is cached by URI; compilation instances also key
+// the adopted namespace so a chameleon include cannot poison another namespace.
 type instanceKey struct {
 	uri       string
 	namespace string

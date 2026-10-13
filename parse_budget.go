@@ -121,6 +121,8 @@ func (p *schemaParser) token(decoder *xml.Decoder) (xml.Token, error) {
 	return decoder.Token()
 }
 
+// The first XML placement pass records exact raw spans. Charge the owned
+// annotation capture before DecodeElement builds retained markup, not after it.
 func (p *schemaParser) admitAnnotationCapture(decoder *xml.Decoder) error {
 	size, known := p.annotationSpans[decoder.InputOffset()]
 	if !known || size < 0 || size > int64(len(p.source)) {

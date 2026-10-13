@@ -17,6 +17,10 @@ func Marshal(document *Document) ([]byte, error) {
 
 // MarshalWithOptions serializes a schema document deterministically as UTF-8
 // XML while enforcing explicit output, nesting, and component-work limits.
+// The model is borrowed without mutation and must remain stable during this
+// synchronous, context-free call. Cycles fail preflight. Errors return no bytes;
+// success returns owned bytes, not canonical XML or original lexical prefixes.
+// Serialization does not establish schema validity; compilation is separate.
 func MarshalWithOptions(document *Document, options MarshalOptions) ([]byte, error) {
 	if document == nil {
 		return nil, fmt.Errorf("xsd: document is nil")

@@ -19,8 +19,10 @@ type Catalog struct {
 // 256 mappings and 64 MiB of namespace and resource identity bytes.
 // Negative limits are invalid. Limits are inclusive.
 type CatalogOptions struct {
+	// MaxMappings bounds namespace mappings; zero selects 256.
 	MaxMappings int
-	MaxBytes    int64
+	// MaxBytes bounds cumulative namespace and identity bytes; zero selects 64 MiB.
+	MaxBytes int64
 }
 
 // NewCatalog validates and copies namespace mappings. The delegated resolver

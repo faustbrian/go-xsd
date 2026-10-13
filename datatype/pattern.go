@@ -28,6 +28,8 @@ func CompilePattern(pattern string) (*regexp.Regexp, error) {
 // set work. Class-subtraction depth is limited to 256, counting the outer class
 // as one, independently of source and translated byte bounds. Standard-library
 // regexp compilation and subsequent matching cannot be interrupted in flight.
+// A nil context disables cancellation checks, unlike parser/compiler entry
+// points. Source and translated bytes are capped at 1 MiB and 8 MiB.
 func CompilePatternContext(ctx context.Context, pattern string) (*regexp.Regexp, error) {
 	if err := patternContextError(ctx); err != nil {
 		return nil, err
@@ -278,6 +280,9 @@ func (translator *patternTranslator) parseEscape() (runeSet, rune, bool, error) 
 
 func withinByteLimit(length int, limit int) bool { return length <= limit }
 
+// Block names use the fixed XSD 1.0 inventory; category names use the pinned
+// toolchain's standard Unicode tables. These are distinct authorities and must
+// not be replaced with caller-supplied tables without reviewing bounds.
 func (translator *patternTranslator) parseProperty(start int) (runeSet, error) {
 	if !translator.consume('{') {
 		return nil, fmt.Errorf("xsd: property escape at byte %d is missing '{'", start)

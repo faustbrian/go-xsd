@@ -24,20 +24,28 @@ const (
 // defaults; negative values are invalid. Owned-work limits are independent of
 // serialized source bytes and do not measure exact heap or decoder allocation.
 type ParseOptions struct {
-	SystemID         string
+	// SystemID is caller-supplied resource identity for trusted location reporting.
+	SystemID string
+	// MaxDocumentBytes bounds serialized schema bytes; zero selects 8 MiB.
 	MaxDocumentBytes int64
-	MaxDepth         int
-	MaxElements      int
+	// MaxDepth bounds XML element nesting; zero selects 256.
+	MaxDepth int
+	// MaxElements bounds XML start elements; zero selects 1,000,000.
+	MaxElements int
 	// MaxNamespaceEntries bounds cumulative owned namespace copies/declarations,
 	// including rebindings. Zero selects 1,000,000 entries.
+	MaxNamespaceEntries int
 	// MaxModelBytes bounds retained model string occurrences and conservative
 	// URI/annotation copy work. Zero selects 64 MiB. Shared backing storage does
-	// not merge charges for distinct retained model fields or namespace entries.
-	MaxNamespaceEntries int
-	MaxModelBytes       int64
+	// not merge charges for distinct retained fields or namespace entries.
+	MaxModelBytes int64
 }
 
 // Parse decodes one XML Schema document without resolving external resources.
+// ctx must be non-nil and source must remain unchanged while borrowed. Success
+// returns a caller-mutable owned model; failure returns no model. DTD/directive
+// processing is forbidden. Finite options admit owned work, not all allocations
+// performed inside encoding/xml before it yields a token.
 func Parse(ctx context.Context, source []byte, options ParseOptions) (*Document, error) {
 	if options.MaxDocumentBytes < 0 || options.MaxDepth < 0 || options.MaxElements < 0 || options.MaxNamespaceEntries < 0 || options.MaxModelBytes < 0 {
 		return nil, fmt.Errorf("xsd: parse limits must not be negative")

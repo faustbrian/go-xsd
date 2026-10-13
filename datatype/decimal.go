@@ -8,21 +8,31 @@ import (
 )
 
 var (
+	// ErrInvalidLexical identifies malformed datatype lexical input; detailed errors
+	// may echo that input.
 	ErrInvalidLexical = errors.New("xsd datatype: invalid lexical value")
+	// ErrFacetViolation identifies a value rejected by a constraining facet.
 	ErrFacetViolation = errors.New("xsd datatype: facet violation")
-	ErrLimitExceeded  = errors.New("xsd datatype: resource limit exceeded")
+	// ErrLimitExceeded identifies refusal of a configured resource or supported-size
+	// bound.
+	ErrLimitExceeded = errors.New("xsd datatype: resource limit exceeded")
 )
 
 const maxDecimalLexicalBytes = 1 << 20
 
 // Decimal is an immutable arbitrary-precision XML Schema decimal value.
+// Its zero value denotes zero. Copies may share a private coefficient, but
+// arithmetic helpers copy it before mutation; concurrent reads are safe.
 type Decimal struct {
 	coefficient *big.Int
 	scale       int
 }
 
 // ParseDecimal applies decimal's fixed collapse whitespace rule and parses
-// its lexical space without floating-point conversion.
+// its lexical space without floating-point conversion. Inputs above 1 MiB are
+// refused before trimming; exponent notation is rejected. Trailing fractional
+// zeros are removed exactly and signed zero normalizes to zero. Errors may echo
+// malformed lexical input. No rounding or machine-width approximation occurs.
 func ParseDecimal(lexical string) (Decimal, error) {
 	if len(lexical) > maxDecimalLexicalBytes {
 		return Decimal{}, fmt.Errorf("%w: decimal exceeds %d bytes", ErrLimitExceeded, maxDecimalLexicalBytes)
@@ -154,15 +164,26 @@ func (d Decimal) TotalDigits() int {
 func (d Decimal) FractionDigits() int { return d.scale }
 
 // DecimalFacets contains decimal's ordered and digit constraining facets.
-// A zero digit count means the facet is absent.
+// Nonpositive TotalDigits disables its check; nil FractionDigits is absent,
+// while a pointer to zero requires an integral value. Referenced bounds and
+// slices are borrowed during Validate and must not be mutated concurrently.
 type DecimalFacets struct {
-	MinInclusive   *Decimal
-	MinExclusive   *Decimal
-	MaxInclusive   *Decimal
-	MaxExclusive   *Decimal
-	TotalDigits    int
+	// MinInclusive is an optional inclusive lower bound; nil means absent.
+	MinInclusive *Decimal
+	// MinExclusive is an optional exclusive lower bound; nil means absent.
+	MinExclusive *Decimal
+	// MaxInclusive is an optional inclusive upper bound; nil means absent.
+	MaxInclusive *Decimal
+	// MaxExclusive is an optional exclusive upper bound; nil means absent.
+	MaxExclusive *Decimal
+	// TotalDigits is the maximum digit count; nonpositive disables this check.
+	TotalDigits int
+	// FractionDigits is an optional maximum scale; nil means absent and a pointer to
+	// zero requires an integral value. A negative pointed value rejects every value.
 	FractionDigits *int
-	Enumeration    []Decimal
+	// Enumeration admits numerically equal values; an empty slice disables
+	// enumeration.
+	Enumeration []Decimal
 }
 
 // Validate checks a decimal value against every configured facet.

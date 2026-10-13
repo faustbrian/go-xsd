@@ -21,27 +21,43 @@ var (
 type Kind string
 
 const (
-	KindInclude  Kind = "include"
-	KindImport   Kind = "import"
+	// KindInclude requests same-namespace or chameleon schema composition.
+	KindInclude Kind = "include"
+	// KindImport requests declarations for an import namespace.
+	KindImport Kind = "import"
+	// KindRedefine requests a schema whose declarations will be redefined.
 	KindRedefine Kind = "redefine"
 )
 
 // Request identifies a resource after base-URI resolution.
 type Request struct {
-	URI       string
+	// URI is the resolved request identity; empty permits a locationless import.
+	URI string
+	// Namespace is the requested import namespace, including empty for no namespace.
 	Namespace string
-	Kind      Kind
+	// Kind identifies include, import or redefine loading.
+	Kind Kind
 }
 
 // Resource is an owned schema resource. Resolver implementations must not
 // reuse Content storage across calls.
 type Resource struct {
-	URI     string
+	// URI is the absolute fragment-free resource identity.
+	URI string
+	// Content transfers stable byte storage; the resolver must not retain or mutate
+	// it after return.
 	Content []byte
 }
 
-// Resolver obtains explicitly configured schema resources.
+// Resolver obtains explicitly configured schema resources. Implementations
+// preserve absolute fragment-free returned identity and stable owned bytes,
+// observe operation contexts, and perform their own pre-I/O resource admission.
+// The compiler checks requested/returned identity and discards partial results;
+// it cannot interrupt a collaborator that ignores cancellation. Concurrency and
+// lifetime are implementation obligations when used by concurrent Compilers.
 type Resolver interface {
+	// Resolve must observe a non-nil context and return no partial resource on
+	// error; successful bytes transfer to the caller.
 	Resolve(context.Context, Request) (Resource, error)
 }
 
@@ -67,8 +83,11 @@ type Memory struct {
 // 256 resources, 64 MiB of identity and content bytes, and 16 MiB per resource.
 // Negative limits are invalid. Limits are inclusive.
 type MemoryOptions struct {
-	MaxResources     int
-	MaxBytes         int64
+	// MaxResources bounds resource count; zero selects 256.
+	MaxResources int
+	// MaxBytes bounds cumulative URI and content bytes; zero selects 64 MiB.
+	MaxBytes int64
+	// MaxResourceBytes bounds each content slice; zero selects 16 MiB.
 	MaxResourceBytes int64
 }
 

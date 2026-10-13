@@ -6,15 +6,18 @@ import (
 	"math/big"
 )
 
+// ErrUnknownType identifies an unsupported built-in datatype name.
 var ErrUnknownType = errors.New("xsd datatype: unknown built-in type")
 
 // Integer is an immutable arbitrary-precision XML Schema integer value.
+// Its zero value denotes zero; copies share only private read-only magnitude.
 type Integer struct {
 	value *big.Int
 }
 
 // ParseInteger applies integer's fixed collapse whitespace rule and parses its
-// lexical space without machine-width or floating-point conversion.
+// lexical space without machine-width or floating-point conversion. The original
+// input is capped at 1 MiB before trimming. Detailed errors may echo lexical input.
 func ParseInteger(lexical string) (Integer, error) {
 	if len(lexical) > maxDecimalLexicalBytes {
 		return Integer{}, fmt.Errorf("%w: integer exceeds %d bytes", ErrLimitExceeded, maxDecimalLexicalBytes)

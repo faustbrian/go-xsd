@@ -16,6 +16,8 @@ var benchmarkSchema []byte
 //go:embed testdata/benchmark/valid.xml
 var benchmarkInstance []byte
 
+// BenchmarkParseSchema measures parsing the embedded schema, including model
+// creation.
 func BenchmarkParseSchema(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkSchema)))
@@ -26,6 +28,8 @@ func BenchmarkParseSchema(b *testing.B) {
 	}
 }
 
+// BenchmarkCompileSchema measures per-call graph construction with one reusable
+// Compiler.
 func BenchmarkCompileSchema(b *testing.B) {
 	compiler, err := compile.New(compile.Options{})
 	if err != nil {
@@ -42,6 +46,8 @@ func BenchmarkCompileSchema(b *testing.B) {
 	}
 }
 
+// BenchmarkValidateInstance measures validation plus the validity check against
+// the embedded instance; compiler/validator setup and warmup are excluded.
 func BenchmarkValidateInstance(b *testing.B) {
 	validator := benchmarkValidator(b)
 	result, err := validator.Validate(context.Background(), benchmarkInstance)
@@ -59,6 +65,8 @@ func BenchmarkValidateInstance(b *testing.B) {
 	}
 }
 
+// BenchmarkMarshalSchema measures serialization of a parsed model; parsing and
+// initial marshaling are excluded.
 func BenchmarkMarshalSchema(b *testing.B) {
 	document, err := xsd.Parse(context.Background(), benchmarkSchema, xsd.ParseOptions{})
 	if err != nil {

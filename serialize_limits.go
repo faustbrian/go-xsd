@@ -15,9 +15,13 @@ const (
 // MarshalOptions bounds deterministic schema serialization. Zero values use
 // conservative defaults; negative values are invalid.
 type MarshalOptions struct {
+	// MaxOutputBytes bounds buffered/emitted UTF-8 XML bytes; zero selects 64 MiB.
 	MaxOutputBytes int64
-	MaxDepth       int
-	MaxComponents  int
+	// MaxDepth bounds structural schema-model nesting; zero selects 256.
+	MaxDepth int
+	// MaxComponents bounds conservative structure/collection work; zero selects
+	// 1,000,000.
+	MaxComponents int
 }
 
 type marshalLimits struct {
@@ -100,6 +104,8 @@ func (b *marshalBudget) value(value reflect.Value, depth int) error {
 		if _, exists := b.active[pointer]; exists {
 			return fmt.Errorf("%w: cyclic schema model", ErrLimitExceeded)
 		}
+		// Track only the active path: reusing an acyclic subtree is allowed, but
+		// a back edge would recurse indefinitely during serialization.
 		b.active[pointer] = struct{}{}
 		defer delete(b.active, pointer)
 		return b.value(value.Elem(), depth)

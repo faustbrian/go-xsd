@@ -134,6 +134,8 @@ func identityAttributeStep(steps []string) bool {
 	return strings.HasPrefix(last, "attribute::")
 }
 
+// ErrLimitExceeded identifies refusal of a configured resource or supported-size
+// bound.
 var ErrLimitExceeded = errors.New("xsd validate: resource limit exceeded")
 
 const schemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance"
@@ -152,22 +154,34 @@ const (
 
 // Limits bounds work retained while validating one instance.
 type Limits struct {
-	MaxBytes       int64
-	MaxDepth       int
-	MaxTextBytes   int
+	// MaxBytes independently bounds serialized input and cumulative owned string
+	// payload; zero selects 64 MiB.
+	MaxBytes int64
+	// MaxDepth bounds instance element nesting; zero selects 256.
+	MaxDepth int
+	// MaxTextBytes bounds cumulative instance text bytes; zero selects 16 MiB.
+	MaxTextBytes int
+	// MaxDiagnostics bounds retained findings; exhaustion is an error, not a partial
+	// result.
 	MaxDiagnostics int
-	MaxNodes       int
-	MaxAttributes  int
+	// MaxNodes bounds retained instance elements; zero selects 1,000,000.
+	MaxNodes int
+	// MaxAttributes bounds ordinary instance attributes; zero selects 1,000,000.
+	MaxAttributes int
 	// MaxNamespaceEntries bounds cumulative scope copies and declarations.
 	MaxNamespaceEntries int
-	MaxXPathSteps       int
-	MaxIdentityValues   int
+	// MaxXPathSteps bounds estimated identity-XPath work; zero selects 1,000,000.
+	MaxXPathSteps int
+	// MaxIdentityValues bounds retained identity values; zero selects 1,000,000.
+	MaxIdentityValues int
 }
 
 // Options configures a Validator.
 type Options struct {
+	// SystemID is caller-supplied resource identity for trusted location reporting.
 	SystemID string
-	Limits   Limits
+	// Limits selects independent finite work bounds.
+	Limits Limits
 }
 
 // Validator is immutable and safe for concurrent use.
@@ -179,7 +193,10 @@ type Validator struct {
 
 // Result contains deterministic diagnostics in document order.
 type Result struct {
-	Valid       bool
+	// Valid reports whether validation completed with no diagnostics.
+	Valid bool
+	// Diagnostics contains caller-owned findings in traversal order; fields require
+	// trusted inspection.
 	Diagnostics []xsd.Diagnostic
 }
 
@@ -255,15 +272,25 @@ func (v *Validator) ValidateReader(ctx context.Context, reader io.Reader) (Resul
 
 // Node is a caller-owned expanded-name XML tree used by ValidateTree.
 type Node struct {
-	Name       xsd.QName
+	// Name is the expanded element name.
+	Name xsd.QName
+	// Attributes maps expanded attribute names to lexical values.
 	Attributes map[xsd.QName]string
+	// Namespaces is the complete in-scope prefix map supplied for this node.
 	Namespaces map[string]string
-	Children   []Node
-	Text       string
-	Location   xsd.Location
+	// Children contains child elements in document order.
+	Children []Node
+	// Text is retained element text.
+	Text string
+	// Location retains trusted source coordinates; default formatting is redacted.
+	Location xsd.Location
 }
 
-// ValidateTree validates a bounded caller-provided tree without modifying it.
+// ValidateTree clones and validates a bounded caller-provided tree without
+// modifying it. ctx must be non-nil; shared maps/slices must stay unchanged while
+// copied. Each Node.Namespaces is treated as the complete supplied scope, not
+// declarations to inherit from a parent. String/copy bounds are independent of
+// node/attribute/text counts; failures return no partial Result.
 func (v *Validator) ValidateTree(ctx context.Context, root Node) (Result, error) {
 	state := treeCloneState{validator: v}
 	cloned, err := state.clone(ctx, root, 1)

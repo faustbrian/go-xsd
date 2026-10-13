@@ -6,6 +6,8 @@ import (
 	"github.com/faustbrian/go-xsd/v2/datatype"
 )
 
+// FuzzParseDecimal checks exact value equality after canonical serialization
+// and reparsing; it does not approximate with floating-point arithmetic.
 func FuzzParseDecimal(f *testing.F) {
 	for _, seed := range []string{"0", "-0.5", "+001.2300", "1e3", "NaN"} {
 		f.Add(seed)
@@ -22,6 +24,8 @@ func FuzzParseDecimal(f *testing.F) {
 	})
 }
 
+// FuzzBuiltInLexical explores names and lexical payloads for panic-safety,
+// including unknown types; no independent lexical-validity oracle is asserted.
 func FuzzBuiltInLexical(f *testing.F) {
 	f.Add("language", "en-US")
 	f.Add("dateTime", "2000-02-29T12:00:00Z")

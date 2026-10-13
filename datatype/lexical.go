@@ -17,7 +17,11 @@ var (
 )
 
 // ValidateBuiltInLexical checks the lexical space of built-in datatypes whose
-// value spaces do not require an instance namespace context.
+// value spaces do not require an instance namespace context. QName/NOTATION
+// checks only syntax, not prefix binding or declaration existence. This is not
+// a universal built-in validator: integer ranges, decimal values and boolean
+// handling are separate compiler/validator concerns. Detailed errors may echo
+// the input, and this helper has no common lexical-byte cap or context.
 func ValidateBuiltInLexical(name string, lexical string) error {
 	valid, known := builtInLexicalValid(name, lexical)
 	if !known {

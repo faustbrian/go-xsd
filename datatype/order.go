@@ -9,7 +9,8 @@ import (
 
 // CompareOrdered compares values in an XSD 1.0 ordered primitive value space.
 // comparable is false for invalid values and for indeterminate duration or
-// timezone comparisons in the specification's partial orders.
+// timezone comparisons in the specification's partial orders. This helper has
+// no context or lexical-byte admission; callers must bound standalone inputs.
 func CompareOrdered(kind string, left string, right string) (comparison int, comparable bool) {
 	switch kind {
 	case "duration":
@@ -85,6 +86,8 @@ func compareOrderedDurations(left string, right string) (int, bool) {
 	if !leftOK || !rightOK {
 		return 0, false
 	}
+	// XSD 1.0 Datatypes 3.2.6.2 fixes these four reference dates for duration
+	// ordering. Conflicting comparison signs are incomparable, not a total order.
 	references := [...]orderedDurationReference{
 		{year: 1696, month: 9},
 		{year: 1697, month: 2},
@@ -152,6 +155,9 @@ func addOrderedDuration(reference orderedDurationReference, value orderedDuratio
 	return seconds.Add(seconds, clock)
 }
 
+// Truncating division is not calendar floor division for negative years.
+// Adjust a negative remainder so month/year indices stay in the same proleptic
+// calendar convention on both sides of the era boundary.
 func orderedFloorDivMod(value *big.Int, divisor int64) (*big.Int, *big.Int) {
 	quotient := new(big.Int)
 	remainder := new(big.Int)

@@ -1,4 +1,7 @@
-// Package errsafe owns default error-output privacy across public boundaries.
+// Package errsafe owns fixed-category default error output across compiler and
+// resolver boundaries. It preserves causes for explicit trusted unwrapping;
+// it is not a sanitizer for independently formatted fields or arbitrary fmt
+// verb/type error diagnostics. Callers supply trusted category strings.
 package errsafe
 
 import (

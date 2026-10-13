@@ -1,4 +1,9 @@
-// Package builder provides checked helpers for constructing schema documents.
+// Package builder provides mutable helpers for assembling schema documents
+// and checking them through the supported compiler. New returns the normal
+// entry point. Schema is not concurrency-safe and its zero value is unusable.
+// This is a trusted construction helper, not hostile model ingestion: recursive
+// cloning in AddComplexType requires finite acyclic input before Build can
+// apply marshal/compiler limits. No infrastructure is acquired implicitly.
 package builder
 
 import (
@@ -13,7 +18,7 @@ import (
 const validationURI = "urn:xsd:builder"
 
 // Schema accumulates declarations and rejects duplicate or malformed names.
-// Build performs complete schema compilation before returning a document.
+// Build checks the supported compiler constraints before returning a document.
 type Schema struct {
 	document *xsd.Document
 	names    map[string]string
@@ -42,6 +47,8 @@ func (s *Schema) SetFormDefaults(elements xsd.Form, attributes xsd.Form) error {
 }
 
 // AddSimpleRestriction adds a named restriction of an existing simple type.
+// The facet slice is copied, but nested facet namespace maps and annotation
+// pointers are retained; keep those shared inputs stable until Build completes.
 func (s *Schema) AddSimpleRestriction(
 	name string,
 	base xsd.QName,
@@ -64,6 +71,8 @@ func (s *Schema) AddSimpleRestriction(
 }
 
 // AddComplexType adds a named complex type with copied content and attributes.
+// Recursive input graphs must be finite and acyclic. Copying happens here,
+// without a context or separate budget, before Build's bounded serialization.
 func (s *Schema) AddComplexType(
 	name string,
 	content *xsd.ModelGroup,
@@ -112,7 +121,10 @@ func (s *Schema) AddAttribute(name string, typeName xsd.QName) error {
 	return nil
 }
 
-// Build compiles the generated schema and returns an isolated parsed document.
+// Build marshals the accumulated model, compiles it, and reparses an isolated
+// document. The receiver is preserved for later builds, but cannot be mutated
+// concurrently. ctx must be non-nil; the initial marshal phase is synchronous
+// and has no cancellation checkpoints. Build does not enable external loading.
 func (s *Schema) Build(ctx context.Context) (*xsd.Document, error) {
 	encoded, err := xsd.Marshal(s.document)
 	if err != nil {

@@ -21,10 +21,14 @@ var (
 // Fields are for explicit trusted inspection; supported default output is
 // redacted. Invalid fmt verb/type diagnostics can expose raw fields.
 type Location struct {
+	// SystemID is caller-supplied resource identity for trusted location reporting.
 	SystemID string
-	Line     int
-	Column   int
-	Offset   int64
+	// Line is the one-based input line when known.
+	Line int
+	// Column is the one-based input column when known.
+	Column int
+	// Offset is the zero-based input byte offset.
+	Offset int64
 }
 
 // Format redacts caller-supplied resource identity and operational coordinates.
@@ -43,7 +47,9 @@ func (Location) MarshalJSON() ([]byte, error) { return []byte(`"xsd: location"`)
 type Severity string
 
 const (
-	SeverityError   Severity = "error"
+	// SeverityError classifies an error-level finding.
+	SeverityError Severity = "error"
+	// SeverityWarning classifies a warning-level finding.
 	SeverityWarning Severity = "warning"
 )
 
@@ -51,10 +57,15 @@ const (
 // explicit trusted inspection; supported default output exposes a fixed
 // category. Invalid fmt verb/type diagnostics can expose raw fields.
 type Diagnostic struct {
+	// Severity is trusted structured finding severity, not default output text.
 	Severity Severity
-	Code     string
-	Message  string
-	Path     string
+	// Code is the trusted diagnostic classification.
+	Code string
+	// Message is trusted detailed text and may contain input-derived data.
+	Message string
+	// Path is the trusted instance path associated with the finding.
+	Path string
+	// Location retains trusted source coordinates; default formatting is redacted.
 	Location Location
 }
 
@@ -75,8 +86,10 @@ func (Diagnostic) MarshalJSON() ([]byte, error) { return []byte(`"xsd: diagnosti
 // inspect Location and Err explicitly only inside a trusted boundary.
 // Invalid fmt verb/type diagnostics can expose raw fields without calling Format.
 type ParseError struct {
+	// Location retains trusted source coordinates; default formatting is redacted.
 	Location Location
-	Err      error
+	// Err retains the original cause for explicit trusted unwrapping.
+	Err error
 }
 
 // Error returns a fixed category, including for nil and zero receivers.

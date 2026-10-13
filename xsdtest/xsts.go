@@ -1,4 +1,9 @@
-// Package xsdtest runs XML Schema test-set metadata against xsd.
+// Package xsdtest runs opt-in XSTS metadata using the XSD compiler/validator.
+// Run owns one os.Root capability for metadata and fixture reads and records
+// applicability separately from passed/failed runnable cases. Suite files are
+// trusted test data: metadata/fixture reads have no size cap or interruption of
+// blocking filesystem I/O. Reports expose detailed names/causes and are not
+// redacted public diagnostics or a general conformance certificate.
 package xsdtest
 
 import (
@@ -21,24 +26,42 @@ var errFixtureRead = errors.New("xsdtest: suite fixture access failed")
 
 // Report summarizes one official test-set run.
 type Report struct {
-	Passed   int
-	Failed   int
-	Skipped  int
+	// Passed counts runnable expectations whose actual outcome matched.
+	Passed int
+	// Failed counts runnable expectations whose actual outcome differed.
+	Failed int
+	// Skipped counts runnable cases lacking documents or a compiled schema.
+	Skipped int
+	// Excluded counts unsupported validity or nonaccepted status cases.
 	Excluded int
-	Cases    []Case
+	// Cases contains caller-owned detailed case results in execution order.
+	Cases []Case
 }
 
 // Case records one schema or instance expectation.
 type Case struct {
-	Group    string
-	Name     string
-	Kind     string
+	// Group is the test-group name from trusted suite metadata.
+	Group string
+	// Name is the test name from trusted suite metadata.
+	Name string
+	// Kind distinguishes schema and instance expectations.
+	Kind string
+	// Expected is the metadata validity expectation.
 	Expected string
-	Actual   string
-	Err      error
+	// Actual is valid, invalid, error, skipped or excluded as assessed by the
+	// harness.
+	Actual string
+	// Err retains a trusted detailed failure cause; it is not a redacted report
+	// projection.
+	Err error
 }
 
 // Run executes accepted valid and invalid expectations in one XSTS testSet.
+// It explicitly opens suiteRoot and reads trusted metadata/fixtures; ctx must
+// be non-nil. Case failures populate Report and do not by themselves return an
+// error. Cancellation during group traversal returns the report accumulated so
+// far plus an error; startup failures return an empty report. Nonaccepted or
+// non-valid/invalid expectations are excluded, not counted as passing.
 func Run(ctx context.Context, suiteRoot string, metadataPath string) (Report, error) {
 	return run(ctx, suiteRoot, metadataPath, filepath.Abs)
 }
