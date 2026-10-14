@@ -47,8 +47,8 @@ func (s *Schema) SetFormDefaults(elements xsd.Form, attributes xsd.Form) error {
 }
 
 // AddSimpleRestriction adds a named restriction of an existing simple type.
-// The facet slice is copied, but nested facet namespace maps and annotation
-// pointers are retained; keep those shared inputs stable until Build completes.
+// Facets, their namespace maps and annotation content are copied at admission;
+// later caller mutations do not change the retained restriction.
 func (s *Schema) AddSimpleRestriction(
 	name string,
 	base xsd.QName,
@@ -61,12 +61,12 @@ func (s *Schema) AddSimpleRestriction(
 		delete(s.names, "type\x00"+name)
 		return fmt.Errorf("xsd builder: restriction %q has no base", name)
 	}
-	s.document.SimpleTypes = append(s.document.SimpleTypes, xsd.SimpleType{
+	s.document.SimpleTypes = append(s.document.SimpleTypes, cloneSimpleType(xsd.SimpleType{
 		Name:    name,
 		Variety: xsd.SimpleRestriction,
 		Base:    base,
-		Facets:  append([]xsd.Facet(nil), facets...),
-	})
+		Facets:  facets,
+	}))
 	return nil
 }
 

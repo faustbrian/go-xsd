@@ -5,6 +5,14 @@ published major; main follows the v2 module.
 
 ## Unreleased
 
+### Fixed
+
+- Copy restriction-facet namespace maps and annotation content when adding a
+  simple restriction, restoring the builder's owned-input snapshot. Caller or
+  returned-document mutations no longer change later builds. Trusted finite
+  construction, resolved component projections and pinned XSTS ingestion
+  retain their existing limits; no XML Schema support boundary changes.
+
 ### Documentation
 
 - Clarify mutable schema/builder inputs, copied compiled components, explicit

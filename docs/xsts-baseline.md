@@ -9,6 +9,11 @@ of filesystem confinement.
 The next-major harness uses one `os.Root` directory capability for metadata,
 schemas, instances and imported schemas. Relative symlinks within the suite
 root are supported; outside-root targets and absolute symlinks are rejected.
+`xsdtest.Run` reads caller-trusted metadata and decodes its XML before checking
+cancellation at group traversal. Startup decode errors therefore precede group
+cancellation and return an empty report. This initial ingestion has no separate
+tenant-style byte or decode-work quota; callers must trust their suite inputs.
+The official corpus is authenticated by its pinned digest before extraction.
 Fixture-access refusals are reported as errors, not passing invalid-schema
 expectations. Ordinary schema invalidity retains its conformance meaning.
 The caller selects and trusts the root directory. This is not a sandbox for
