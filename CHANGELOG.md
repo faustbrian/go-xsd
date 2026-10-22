@@ -20,6 +20,12 @@ published major; main follows the v2 module.
   trusted diagnostic projections, and non-canonical serialization without
   changing the v2 API or XML Schema support boundary.
 
+## 2.0.3 - 2026-10-22
+
+### Changed
+
+- Publish the current source and documentation with a fresh immutable tag.
+
 ## 2.0.1 - 2026-10-10
 
 - Select Go 1.27.2 for verification and compatible shared analysis tooling,
